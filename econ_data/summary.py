@@ -227,6 +227,96 @@ def format_summary(summary: dict) -> str:
     return "\n".join(lines)
 
 
+def filter_signals(summary: dict) -> dict:
+    """Return a copy of summary containing only series with signals."""
+    filtered = {
+        "standalone": [a for a in summary.get("standalone", []) if a["signals"]],
+        "groups": {},
+    }
+    for gid, gdata in summary.get("groups", {}).items():
+        flagged = [a for a in gdata["series"] if a["signals"]]
+        if flagged:
+            filtered["groups"][gid] = {"name": gdata["name"], "series": flagged}
+    return filtered
+
+
+def format_signals_by_recency(summary: dict, updated_series: set,
+                              recent_days: int = 60) -> str:
+    """Format signals split into 'Updated Today' and 'Updated This Week' sections.
+
+    updated_series: set of series_ids that received new data in this run.
+    recent_days: how far back to look for "this week" bucket. Default 60 days
+        to capture recent monthly releases (e.g. Feb data released in March).
+    """
+    from datetime import date, timedelta
+
+    cutoff = (date.today() - timedelta(days=recent_days)).isoformat()
+
+    today_groups = {}
+    week_groups = {}
+
+    # Process standalone
+    for a in summary.get("standalone", []):
+        if not a["signals"]:
+            continue
+        if a["series_id"] in updated_series:
+            today_groups.setdefault("_standalone", {"name": "", "series": []})
+            today_groups["_standalone"]["series"].append(a)
+        elif a.get("latest_date", "") >= cutoff:
+            week_groups.setdefault("_standalone", {"name": "", "series": []})
+            week_groups["_standalone"]["series"].append(a)
+
+    # Process groups
+    for gid, gdata in summary.get("groups", {}).items():
+        for a in gdata["series"]:
+            if not a["signals"]:
+                continue
+            if a["series_id"] in updated_series:
+                if gid not in today_groups:
+                    today_groups[gid] = {"name": gdata["name"], "series": []}
+                today_groups[gid]["series"].append(a)
+            elif a.get("latest_date", "") >= cutoff:
+                if gid not in week_groups:
+                    week_groups[gid] = {"name": gdata["name"], "series": []}
+                week_groups[gid]["series"].append(a)
+
+    lines = []
+
+    # Today section
+    if today_groups:
+        lines.append("  ┌─────────────────────────────┐")
+        lines.append("  │     UPDATED TODAY            │")
+        lines.append("  └─────────────────────────────┘")
+        lines.extend(_format_group_block(today_groups))
+
+    # This week section
+    if week_groups:
+        if today_groups:
+            lines.append("")
+        lines.append("  ┌─────────────────────────────┐")
+        lines.append("  │     UPDATED THIS WEEK        │")
+        lines.append("  └─────────────────────────────┘")
+        lines.extend(_format_group_block(week_groups))
+
+    if not today_groups and not week_groups:
+        lines.append("  No signals today or this week.")
+
+    return "\n".join(lines)
+
+
+def _format_group_block(groups: dict) -> list:
+    """Format a dict of groups into output lines."""
+    lines = []
+    for gid, gdata in groups.items():
+        if gid != "_standalone":
+            lines.append("")
+            lines.append(f"  {gdata['name']}")
+            lines.append(f"  {'─' * len(gdata['name'])}")
+        for a in gdata["series"]:
+            lines.extend(_format_series(a))
+    return lines
+
+
 def _format_value(val):
     """Format a number concisely."""
     if val is None:

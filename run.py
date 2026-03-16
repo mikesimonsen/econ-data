@@ -8,7 +8,7 @@ from econ_data.fetch_mnd import fetch_mnd
 from econ_data.store_sqlite import get_last_dates, save, save_groups
 from econ_data.daily_analysis import generate_daily_analysis
 from econ_data.export_sheets import export_all_groups, export_all_groups_calcs
-from econ_data.summary import generate_summary, format_summary
+from econ_data.summary import generate_summary, format_summary, format_signals_by_recency
 
 
 def log(msg=""):
@@ -73,50 +73,39 @@ if __name__ == "__main__":
         log("Generating data summary...")
         summary = generate_summary(cfg)
         report = format_summary(summary)
+        updated_ids = {sid for sid, _, _ in updated}
 
         today = datetime.now().strftime("%Y-%m-%d")
         summary_dir = Path("summaries")
         summary_dir.mkdir(exist_ok=True)
-        summary_path = summary_dir / f"summary {today}.txt"
 
-        header = f"  === Latest Data Summary — {today} ===\n"
-        summary_path.write_text(header + report + "\n")
+        # Full summary
+        summary_path = summary_dir / f"summary {today}.txt"
+        summary_header = f"  === Latest Data Summary — {today} ===\n"
+        summary_path.write_text(summary_header + report + "\n")
         log(f"Summary saved to {summary_path}")
 
-        # Also write a signals-only version
-        signals_summary = {
-            "standalone": [a for a in summary["standalone"] if a["signals"]],
-            "groups": {},
-        }
-        for gid, gdata in summary["groups"].items():
-            flagged = [a for a in gdata["series"] if a["signals"]]
-            if flagged:
-                signals_summary["groups"][gid] = {"name": gdata["name"], "series": flagged}
-
-        if signals_summary["standalone"] or signals_summary["groups"]:
-            signals_report = format_summary(signals_summary)
-            signals_path = summary_dir / f"signals {today}.txt"
-            signals_header = f"  === Signals — {today} ===\n"
-            signals_path.write_text(signals_header + signals_report + "\n")
-            log(f"Signals saved to {signals_path}")
-        else:
-            signals_report = None
-            log("No signals — all series following recent trends.")
+        # Signals split by recency
+        signals_report = format_signals_by_recency(summary, updated_ids)
+        signals_path = summary_dir / f"signals {today}.txt"
+        signals_header = f"  === Signals — {today} ===\n\n"
+        signals_path.write_text(signals_header + signals_report + "\n")
+        log(f"Signals saved to {signals_path}")
 
         # Generate LLM daily analysis
         log("Generating daily analysis...")
         try:
             analysis = generate_daily_analysis(
-                signals_text=signals_report or "No signals today.",
-                summary_text=header + report,
+                signals_text=signals_header + signals_report,
+                summary_text=summary_header + report,
             )
             analysis_path = summary_dir / f"daily analysis {today}.txt"
             analysis_header = f"  === Daily Analysis — {today} ===\n\n"
             analysis_content = (
                 analysis_header + analysis
                 + "\n\n" + "─" * 72 + "\n\n"
-                + (signals_header + signals_report + "\n" if signals_report else "")
-                + "\n" + header + report + "\n"
+                + signals_header + signals_report
+                + "\n\n" + summary_header + report + "\n"
             )
             analysis_path.write_text(analysis_content)
             log(f"Daily analysis saved to {analysis_path}")
