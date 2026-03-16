@@ -15,7 +15,7 @@
  */
 
 // ── Configuration ────────────────────────────────────────────
-const GITHUB_OWNER = "YOUR_GITHUB_USERNAME";  // ← update this
+const GITHUB_OWNER = "mikesimonsen";
 const GITHUB_REPO = "econ-data";
 const GITHUB_BRANCH = "main";
 const DATA_DIR = "sheets_data";
