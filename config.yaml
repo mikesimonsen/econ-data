@@ -1,0 +1,385 @@
+# ---------------------------------------------------------------
+# Econ Data Configuration
+# Add/remove series and groups here. Run `python run.py` to fetch
+# new additions, then `python export.py` to export.
+# ---------------------------------------------------------------
+
+# Standalone series (not part of a group)
+series: []
+
+# Groups of related series
+groups:
+  cpi:
+    name: "CPI - Consumer Price Index (BLS, SA)"
+    series:
+      # Headline and core
+      - id: CPIAUCSL
+        name: "CPI All Items (Headline)"
+      - id: CPILFESL
+        name: "CPI Less Food & Energy (Core)"
+      # Components
+      - id: CPIFABSL
+        name: "CPI Food & Beverages"
+      - id: CPIENGSL
+        name: "CPI Energy"
+      - id: CUSR0000SAH1
+        name: "CPI Shelter"
+      - id: CPIMEDSL
+        name: "CPI Medical Care"
+      - id: CPITRNSL
+        name: "CPI Transportation"
+      - id: CPIAPPSL
+        name: "CPI Apparel"
+      - id: CPIEDUSL
+        name: "CPI Education & Communication"
+
+  cpi-metro:
+    name: "CPI by Metro Area (BLS)"
+    series:
+      - id: CUURA101SA0
+        name: "CPI - New York"
+      - id: CUURA102SA0
+        name: "CPI - Philadelphia"
+      - id: CUURA103SA0
+        name: "CPI - Boston"
+      - id: CUURA207SA0
+        name: "CPI - Chicago"
+      - id: CUURA208SA0
+        name: "CPI - Detroit"
+      - id: CUURA316SA0
+        name: "CPI - Dallas"
+      - id: CUURA318SA0
+        name: "CPI - Houston"
+      - id: CUURA319SA0
+        name: "CPI - Atlanta"
+      - id: CUURA320SA0
+        name: "CPI - Miami"
+      - id: CUURA422SA0
+        name: "CPI - San Francisco"
+      - id: CUURA423SA0
+        name: "CPI - Seattle"
+      - id: CUURA400SA0
+        name: "CPI - West Region (Size Class A)"
+
+  pce:
+    name: "PCE Price Index (Fed's Preferred Inflation Measure)"
+    series:
+      - id: PCEPI
+        name: "PCE Price Index"
+      - id: PCEPILFE
+        name: "Core PCE (Less Food & Energy)"
+
+  ppi:
+    name: "Producer Price Index (BLS, SA)"
+    series:
+      - id: WPSFD49207
+        name: "PPI Final Demand - Finished Goods"
+      - id: WPSFD4131
+        name: "PPI Final Demand - Less Food & Energy"
+
+  jolts:
+    name: "JOLTS - Job Openings and Labor Turnover"
+    series:
+      - id: JTSJOL
+        name: "Job Openings: Total Nonfarm"
+      - id: JTSHIL
+        name: "Hires: Total Nonfarm"
+      - id: JTSTSL
+        name: "Total Separations: Total Nonfarm"
+      - id: JTSQUL
+        name: "Quits: Total Nonfarm"
+      - id: JTSLDL
+        name: "Layoffs and Discharges: Total Nonfarm"
+
+  case-shiller:
+    name: "S&P/Case-Shiller Home Price Index (Seasonally Adjusted)"
+    series:
+      - id: CSUSHPISA
+        name: "National Home Price Index"
+      - id: ATXRSA
+        name: "Atlanta"
+      - id: BOXRSA
+        name: "Boston"
+      - id: CRXRSA
+        name: "Charlotte"
+      - id: CHXRSA
+        name: "Chicago"
+      - id: CEXRSA
+        name: "Cleveland"
+      - id: DAXRSA
+        name: "Dallas"
+      - id: DNXRSA
+        name: "Denver"
+      - id: DEXRSA
+        name: "Detroit"
+      - id: LVXRSA
+        name: "Las Vegas"
+      - id: LXXRSA
+        name: "Los Angeles"
+      - id: MIXRSA
+        name: "Miami"
+      - id: MNXRSA
+        name: "Minneapolis"
+      - id: NYXRSA
+        name: "New York"
+      - id: PHXRSA
+        name: "Phoenix"
+      - id: POXRSA
+        name: "Portland"
+      - id: SDXRSA
+        name: "San Diego"
+      - id: SFXRSA
+        name: "San Francisco"
+      - id: SEXRSA
+        name: "Seattle"
+      - id: TPXRSA
+        name: "Tampa"
+      - id: WDXRSA
+        name: "Washington DC"
+
+  existing-home-sales:
+    name: "NAR Existing Home Sales"
+    series:
+      # Sales volume (SAAR, thousands of units)
+      - id: EXHOSLUSM495S
+        name: "Total Existing Home Sales"
+      - id: EXHOSLUSNEM495S
+        name: "Existing Home Sales - Northeast"
+      - id: EXHOSLUSMWM495S
+        name: "Existing Home Sales - Midwest"
+      - id: EXHOSLUSSOM495S
+        name: "Existing Home Sales - South"
+      - id: EXHOSLUSWTM495S
+        name: "Existing Home Sales - West"
+      # Median price
+      - id: HOSMEDUSM052N
+        name: "Median Sales Price - National"
+      - id: HOSMEDUSNEM052N
+        name: "Median Sales Price - Northeast"
+      - id: HOSMEDUSMWM052N
+        name: "Median Sales Price - Midwest"
+      - id: HOSMEDUSSOM052N
+        name: "Median Sales Price - South"
+      - id: HOSMEDUSWTM052N
+        name: "Median Sales Price - West"
+      # Inventory
+      - id: HOSINVUSM495N
+        name: "Housing Inventory"
+      - id: HOSSUPUSM673N
+        name: "Months Supply of Inventory"
+
+  existing-home-sales-nsa:
+    name: "NAR Existing Home Sales (Not Seasonally Adjusted)"
+    series:
+      # Sales volume (NSA, thousands of units)
+      - id: EXHOSLUSM495N
+        name: "Total Existing Home Sales (NSA)"
+      - id: EXHOSLUSNEM495N
+        name: "Existing Home Sales - Northeast (NSA)"
+      - id: EXHOSLUSMWM495N
+        name: "Existing Home Sales - Midwest (NSA)"
+      - id: EXHOSLUSSOM495N
+        name: "Existing Home Sales - South (NSA)"
+      - id: EXHOSLUSWTM495N
+        name: "Existing Home Sales - West (NSA)"
+      # Median price (already NSA)
+      - id: HOSMEDUSM052N
+        name: "Median Sales Price - National"
+      - id: HOSMEDUSNEM052N
+        name: "Median Sales Price - Northeast"
+      - id: HOSMEDUSMWM052N
+        name: "Median Sales Price - Midwest"
+      - id: HOSMEDUSSOM052N
+        name: "Median Sales Price - South"
+      - id: HOSMEDUSWTM052N
+        name: "Median Sales Price - West"
+      # Inventory (already NSA)
+      - id: HOSINVUSM495N
+        name: "Housing Inventory"
+      - id: HOSSUPUSM673N
+        name: "Months Supply of Inventory"
+
+  housing-starts:
+    name: "Housing Starts (Census, SAAR)"
+    series:
+      # National by type
+      - id: HOUST
+        name: "Total Housing Starts"
+      - id: HOUST1F
+        name: "Single-Family Starts"
+      - id: HOUST2F
+        name: "2-4 Unit Starts"
+      - id: HOUST5F
+        name: "5+ Unit Starts"
+      # By region
+      - id: HOUSTNE
+        name: "Starts - Northeast"
+      - id: HOUSTMW
+        name: "Starts - Midwest"
+      - id: HOUSTS
+        name: "Starts - South"
+      - id: HOUSTW
+        name: "Starts - West"
+
+  building-permits:
+    name: "Building Permits (Census, SAAR)"
+    series:
+      # National by type
+      - id: PERMIT
+        name: "Total Building Permits"
+      - id: PERMIT1
+        name: "Single-Family Permits"
+      - id: PERMIT24
+        name: "2-4 Unit Permits"
+      - id: PERMIT5
+        name: "5+ Unit Permits"
+      # By region
+      - id: PERMITNE
+        name: "Permits - Northeast"
+      - id: PERMITMW
+        name: "Permits - Midwest"
+      - id: PERMITS
+        name: "Permits - South"
+      - id: PERMITW
+        name: "Permits - West"
+
+  housing-under-construction:
+    name: "Housing Units Under Construction (Census)"
+    series:
+      - id: UNDCONTSA
+        name: "Total Units Under Construction (SA)"
+      - id: UNDCON1USA
+        name: "Single-Family Under Construction"
+
+  housing-completions:
+    name: "Housing Completions (Census, SAAR)"
+    series:
+      - id: COMPUTSA
+        name: "Total Housing Completions"
+      - id: COMPU1USA
+        name: "Single-Family Completions"
+      - id: COMPU5MUSA
+        name: "5+ Unit Completions"
+
+  new-home-sales:
+    name: "New Home Sales (Census/HUD)"
+    series:
+      - id: HSN1F
+        name: "New Single-Family Homes Sold (SAAR)"
+      - id: MSPNHSUS
+        name: "Median Sales Price - New Homes"
+      - id: ASPNHSUS
+        name: "Average Sales Price - New Homes"
+      - id: MSACSR
+        name: "Months Supply of New Houses"
+
+  construction-spending:
+    name: "Construction Spending (Census)"
+    series:
+      - id: TLRESCONS
+        name: "Total Residential Construction Spending"
+      - id: PRRESCONS
+        name: "Private Residential Construction Spending"
+
+  unemployment:
+    name: "Unemployment & Labor Underutilization (BLS)"
+    series:
+      # U-rates (all measures of labor underutilization)
+      - id: UNRATE
+        name: "U-3 Unemployment Rate (Official)"
+      - id: U1RATE
+        name: "U-1 Unemployed 15+ Weeks as % of Labor Force"
+      - id: U2RATE
+        name: "U-2 Job Losers as % of Labor Force"
+      - id: U4RATE
+        name: "U-4 + Discouraged Workers"
+      - id: U5RATE
+        name: "U-5 + Other Marginally Attached"
+      - id: U6RATE
+        name: "U-6 + Part-Time for Economic Reasons"
+      # Unemployment by duration
+      - id: UEMPLT5
+        name: "Unemployed Less Than 5 Weeks (000s)"
+      - id: UEMP5TO14
+        name: "Unemployed 5-14 Weeks (000s)"
+      - id: UEMP15T26
+        name: "Unemployed 15-26 Weeks (000s)"
+      - id: UEMP27OV
+        name: "Unemployed 27+ Weeks (000s)"
+      # Levels and duration
+      - id: UNEMPLOY
+        name: "Total Unemployed (000s)"
+      - id: UEMPMED
+        name: "Median Duration of Unemployment (Weeks)"
+      - id: UEMPMEAN
+        name: "Average Duration of Unemployment (Weeks)"
+
+  labor-force:
+    name: "Labor Force & Employment (BLS)"
+    series:
+      - id: CLF16OV
+        name: "Civilian Labor Force Level (000s)"
+      - id: CIVPART
+        name: "Labor Force Participation Rate"
+      - id: EMRATIO
+        name: "Employment-Population Ratio"
+      - id: PAYEMS
+        name: "Total Nonfarm Payrolls (000s)"
+      - id: CES0500000003
+        name: "Average Hourly Earnings - All Employees"
+      - id: AWHAETP
+        name: "Average Weekly Hours - All Employees"
+      - id: AHETPI
+        name: "Average Hourly Earnings - Production Workers"
+
+  jobless-claims:
+    name: "Jobless Claims (Weekly, SA)"
+    series:
+      - id: ICSA
+        name: "Initial Claims"
+      - id: IC4WSA
+        name: "Initial Claims - 4 Week Average"
+      - id: CCSA
+        name: "Continuing Claims"
+      - id: CC4WSA
+        name: "Continuing Claims - 4 Week Average"
+      - id: IURSA
+        name: "Insured Unemployment Rate"
+
+  treasury-yields:
+    name: "Treasury Yields (Daily)"
+    series:
+      - id: DGS10
+        name: "10-Year Treasury Yield"
+
+  mortgage-rates:
+    name: "Mortgage Rates (Mortgage News Daily)"
+    source: mnd
+    series:
+      - id: MND_30YR_FIXED
+        name: "30-Year Fixed Mortgage Rate"
+      - id: MND_15YR_FIXED
+        name: "15-Year Fixed Mortgage Rate"
+      - id: MND_30YR_FHA
+        name: "30-Year FHA Mortgage Rate"
+      - id: MND_30YR_JUMBO
+        name: "30-Year Jumbo Mortgage Rate"
+      - id: MND_7YR_ARM
+        name: "7/6 SOFR ARM Rate"
+      - id: MND_30YR_VA
+        name: "30-Year VA Mortgage Rate"
+
+  construction-employment:
+    name: "Construction Employment (BLS)"
+    series:
+      - id: USCONS
+        name: "All Employees - Construction"
+      - id: CES2023610001
+        name: "All Employees - Residential Building"
+      - id: CES2023620001
+        name: "All Employees - Nonresidential Building"
+
+# Default export behavior (used when running: python export.py with no flags)
+export:
+  format: excel        # csv, excel, or both
+  output_dir: exports

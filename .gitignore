@@ -1,0 +1,15 @@
+.env
+*.db
+exports/
+logs/
+summaries/
+comparisons/
+__pycache__/
+*.pyc
+.venv/
+dist/
+*.egg-info/
+mnd_history.tsv
+series_inventory.csv
+.DS_Store
+.claude/
