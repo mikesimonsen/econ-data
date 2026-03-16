@@ -7,7 +7,7 @@ from econ_data.fetch import fetch_all
 from econ_data.fetch_mnd import fetch_mnd
 from econ_data.store_sqlite import get_last_dates, save, save_groups
 from econ_data.daily_analysis import generate_daily_analysis
-from econ_data.export_sheets import export_all_groups
+from econ_data.export_sheets import export_all_groups, export_all_groups_calcs
 from econ_data.summary import generate_summary, format_summary
 
 
@@ -127,13 +127,14 @@ if __name__ == "__main__":
     if new_obs:
         log("Exporting Sheets data...")
         paths = export_all_groups(cfg)
-        log(f"Exported {len(paths)} group CSVs to sheets_data/")
+        calc_paths = export_all_groups_calcs(cfg)
+        log(f"Exported {len(paths)} value CSVs + {len(calc_paths)} calc CSVs")
 
         # Auto-commit and push to GitHub
         import subprocess
         try:
             subprocess.run(
-                ["git", "add", "sheets_data/"],
+                ["git", "add", "sheets_data/", "sheets_data_calcs/"],
                 cwd=Path(__file__).parent, check=True, capture_output=True,
             )
             subprocess.run(

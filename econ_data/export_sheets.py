@@ -1,6 +1,7 @@
 """Export group data as wide-format CSVs for Google Sheets consumption.
 
 Each group gets one CSV: dates as rows, series as columns.
+Supports raw values, period_pct, and yoy_pct exports.
 """
 
 import csv
@@ -10,12 +11,18 @@ from pathlib import Path
 from econ_data.store_sqlite import DB_PATH
 
 SHEETS_DIR = Path(__file__).parent.parent / "sheets_data"
+SHEETS_CALC_DIR = Path(__file__).parent.parent / "sheets_data_calcs"
 
 
-def export_group_csv(group_id: str, group_name: str, series_ids: list,
-                     output_dir: Path = SHEETS_DIR,
-                     db_path: Path = DB_PATH) -> Path:
-    """Export a group as a wide-format CSV (dates as rows, series as columns)."""
+def _export_group(group_id: str, series_ids: list, output_dir: Path,
+                  table: str, calc_type: str = None,
+                  suffix: str = "", db_path: Path = DB_PATH) -> Path:
+    """Export a group as a wide-format CSV.
+
+    table: "observations" for raw values, "calculated" for derived series.
+    calc_type: "period_pct" or "yoy_pct" (only used when table="calculated").
+    suffix: appended to column names (e.g. " Period %").
+    """
     con = sqlite3.connect(db_path)
 
     # Get series names
@@ -30,10 +37,17 @@ def export_group_csv(group_id: str, group_name: str, series_ids: list,
     all_dates = set()
     series_data = {}
     for sid in series_ids:
-        rows = con.execute(
-            "SELECT date, value FROM observations WHERE series_id = ? ORDER BY date",
-            (sid,),
-        ).fetchall()
+        if table == "observations":
+            rows = con.execute(
+                "SELECT date, value FROM observations WHERE series_id = ? ORDER BY date",
+                (sid,),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT date, value FROM calculated "
+                "WHERE series_id = ? AND calc_type = ? ORDER BY date",
+                (sid, calc_type),
+            ).fetchall()
         series_data[sid] = {d: v for d, v in rows}
         all_dates.update(d for d, _ in rows)
 
@@ -45,7 +59,7 @@ def export_group_csv(group_id: str, group_name: str, series_ids: list,
 
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["date"] + [names[sid] for sid in series_ids])
+        writer.writerow(["date"] + [names[sid] + suffix for sid in series_ids])
         for d in dates_sorted:
             row = [d]
             for sid in series_ids:
@@ -56,12 +70,40 @@ def export_group_csv(group_id: str, group_name: str, series_ids: list,
     return path
 
 
+def export_group_csv(group_id: str, group_name: str, series_ids: list,
+                     output_dir: Path = SHEETS_DIR,
+                     db_path: Path = DB_PATH) -> Path:
+    """Export raw values for a group."""
+    return _export_group(group_id, series_ids, output_dir,
+                         table="observations", db_path=db_path)
+
+
 def export_all_groups(cfg: dict, output_dir: Path = SHEETS_DIR,
                       db_path: Path = DB_PATH) -> list:
-    """Export all groups as wide-format CSVs. Returns list of paths written."""
+    """Export all groups as raw-value CSVs. Returns list of paths written."""
     paths = []
     for gid, gdata in cfg.get("groups", {}).items():
         series_ids = [s["id"] for s in gdata["series"]]
         path = export_group_csv(gid, gdata["name"], series_ids, output_dir, db_path)
         paths.append(path)
+    return paths
+
+
+def export_all_groups_calcs(cfg: dict, output_dir: Path = SHEETS_CALC_DIR,
+                            db_path: Path = DB_PATH) -> list:
+    """Export period_pct and yoy_pct for all groups. Returns list of paths written.
+
+    Creates two CSVs per group: {group_id}_period_pct.csv and {group_id}_yoy_pct.csv.
+    """
+    paths = []
+    for gid, gdata in cfg.get("groups", {}).items():
+        series_ids = [s["id"] for s in gdata["series"]]
+
+        for calc_type, suffix in [("period_pct", " Period %"), ("yoy_pct", " YoY %")]:
+            sub_dir = output_dir / calc_type
+            path = _export_group(gid, series_ids, sub_dir,
+                                 table="calculated", calc_type=calc_type,
+                                 suffix=suffix, db_path=db_path)
+            paths.append(path)
+
     return paths

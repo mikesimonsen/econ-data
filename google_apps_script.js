@@ -5,9 +5,8 @@
  * 1. Open your Google Sheet
  * 2. Extensions → Apps Script
  * 3. Paste this entire file
- * 4. Update GITHUB_OWNER and GITHUB_REPO below
- * 5. Run importAllGroups() manually to test
- * 6. Set up a daily trigger: Edit → Triggers → Add Trigger
+ * 4. Run importAllGroups() manually to test
+ * 5. Set up a daily trigger: Edit → Triggers → Add Trigger
  *    - Function: importAllGroups
  *    - Event source: Time-driven
  *    - Type: Day timer
@@ -18,7 +17,6 @@
 const GITHUB_OWNER = "mikesimonsen";
 const GITHUB_REPO = "econ-data";
 const GITHUB_BRANCH = "main";
-const DATA_DIR = "sheets_data";
 
 // Which groups to import, and what to name the Sheet tabs.
 // Comment out any you don't want.
@@ -45,32 +43,68 @@ const GROUPS = [
   { file: "construction-employment", tab: "Construction Employment" },
 ];
 
-// ── Main function ────────────────────────────────────────────
+// ── Main functions ───────────────────────────────────────────
 
+/**
+ * Import raw values, period % change, and YoY % change for all groups.
+ */
 function importAllGroups() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
 
   GROUPS.forEach(function (group) {
-    try {
-      const csvText = fetchCSV(group.file);
-      const data = Utilities.parseCsv(csvText);
-      writeToSheet(ss, group.tab, data);
-      Logger.log("Updated: " + group.tab + " (" + data.length + " rows)");
-    } catch (e) {
-      Logger.log("Error updating " + group.tab + ": " + e.message);
-    }
+    // Raw values
+    importOne(ss, "sheets_data", group.file, group.tab);
+
+    // Period % change
+    importOne(ss, "sheets_data_calcs/period_pct", group.file, group.tab + " Period%");
+
+    // YoY % change
+    importOne(ss, "sheets_data_calcs/yoy_pct", group.file, group.tab + " YoY%");
   });
 
-  // Update the "Last Updated" timestamp
+  updateTimestamp(ss);
+}
+
+/**
+ * Import only raw values (no calcs).
+ */
+function importValuesOnly() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  GROUPS.forEach(function (group) {
+    importOne(ss, "sheets_data", group.file, group.tab);
+  });
+  updateTimestamp(ss);
+}
+
+/**
+ * Import only calculated series (period % and YoY %).
+ */
+function importCalcsOnly() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  GROUPS.forEach(function (group) {
+    importOne(ss, "sheets_data_calcs/period_pct", group.file, group.tab + " Period%");
+    importOne(ss, "sheets_data_calcs/yoy_pct", group.file, group.tab + " YoY%");
+  });
   updateTimestamp(ss);
 }
 
 // ── Helpers ──────────────────────────────────────────────────
 
-function fetchCSV(filename) {
+function importOne(ss, dataDir, filename, tabName) {
+  try {
+    var csvText = fetchCSV(dataDir, filename);
+    var data = Utilities.parseCsv(csvText);
+    writeToSheet(ss, tabName, data);
+    Logger.log("Updated: " + tabName + " (" + data.length + " rows)");
+  } catch (e) {
+    Logger.log("Error updating " + tabName + ": " + e.message);
+  }
+}
+
+function fetchCSV(dataDir, filename) {
   var url = "https://raw.githubusercontent.com/"
     + GITHUB_OWNER + "/" + GITHUB_REPO + "/"
-    + GITHUB_BRANCH + "/" + DATA_DIR + "/" + filename + ".csv";
+    + GITHUB_BRANCH + "/" + dataDir + "/" + filename + ".csv";
 
   var response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
 
