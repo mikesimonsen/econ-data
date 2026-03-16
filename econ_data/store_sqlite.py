@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS export_log (
     last_date   TEXT    NOT NULL,
     exported_at TEXT    NOT NULL
 );
+CREATE TABLE IF NOT EXISTS fetch_log (
+    series_id   TEXT    PRIMARY KEY,
+    last_checked TEXT   NOT NULL
+);
 """
 
 
@@ -75,6 +79,28 @@ def save_export_log(export_key: str, last_date: str, db_path: Path = DB_PATH) ->
     con.execute(
         "INSERT OR REPLACE INTO export_log (export_key, last_date, exported_at) VALUES (?, ?, ?)",
         (export_key, last_date, datetime.now().isoformat(timespec="seconds")),
+    )
+    con.commit()
+    con.close()
+
+
+def get_fetch_log(db_path: Path = DB_PATH) -> dict:
+    """Return {series_id: date} of when each series was last checked for new data."""
+    from datetime import date as date_type
+    con = _connect(db_path)
+    rows = con.execute("SELECT series_id, last_checked FROM fetch_log").fetchall()
+    con.close()
+    return {sid: date_type.fromisoformat(d) for sid, d in rows}
+
+
+def save_fetch_log(series_ids: list, db_path: Path = DB_PATH) -> None:
+    """Record that these series were checked for new data today."""
+    from datetime import date
+    today = date.today().isoformat()
+    con = _connect(db_path)
+    con.executemany(
+        "INSERT OR REPLACE INTO fetch_log (series_id, last_checked) VALUES (?, ?)",
+        [(sid, today) for sid in series_ids],
     )
     con.commit()
     con.close()
