@@ -2,16 +2,20 @@
 
 Each group gets one CSV: dates as rows, series as columns.
 Supports raw values, period_pct, and yoy_pct exports.
+Writes a manifest (last_updated.json) so consumers can skip unchanged groups.
 """
 
 import csv
+import json
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 from econ_data.store_sqlite import DB_PATH
 
 SHEETS_DIR = Path(__file__).parent.parent / "sheets_data"
 SHEETS_CALC_DIR = Path(__file__).parent.parent / "sheets_data_calcs"
+MANIFEST_PATH = Path(__file__).parent.parent / "sheets_data" / "last_updated.json"
 
 
 def _export_group(group_id: str, series_ids: list, output_dir: Path,
@@ -78,32 +82,71 @@ def export_group_csv(group_id: str, group_name: str, series_ids: list,
                          table="observations", db_path=db_path)
 
 
-def export_all_groups(cfg: dict, output_dir: Path = SHEETS_DIR,
-                      db_path: Path = DB_PATH) -> list:
-    """Export all groups as raw-value CSVs. Returns list of paths written."""
-    paths = []
+def _groups_with_updates(cfg: dict, updated_ids: set) -> list:
+    """Return list of (group_id, group_data) where at least one series was updated."""
+    result = []
     for gid, gdata in cfg.get("groups", {}).items():
+        series_ids = {s["id"] for s in gdata["series"]}
+        if series_ids & updated_ids:
+            result.append((gid, gdata))
+    return result
+
+
+def export_all_groups(cfg: dict, updated_ids: set = None,
+                      output_dir: Path = SHEETS_DIR,
+                      db_path: Path = DB_PATH) -> list:
+    """Export groups as raw-value CSVs. Only exports groups with updated series.
+
+    If updated_ids is None, exports all groups (for initial/full export).
+    """
+    paths = []
+    if updated_ids is not None:
+        groups = _groups_with_updates(cfg, updated_ids)
+    else:
+        groups = list(cfg.get("groups", {}).items())
+
+    for gid, gdata in groups:
         series_ids = [s["id"] for s in gdata["series"]]
         path = export_group_csv(gid, gdata["name"], series_ids, output_dir, db_path)
         paths.append(path)
     return paths
 
 
-def export_all_groups_calcs(cfg: dict, output_dir: Path = SHEETS_CALC_DIR,
+def export_all_groups_calcs(cfg: dict, updated_ids: set = None,
+                            output_dir: Path = SHEETS_CALC_DIR,
                             db_path: Path = DB_PATH) -> list:
-    """Export period_pct and yoy_pct for all groups. Returns list of paths written.
-
-    Creates two CSVs per group: {group_id}_period_pct.csv and {group_id}_yoy_pct.csv.
-    """
+    """Export period_pct and yoy_pct CSVs. Only exports groups with updated series."""
     paths = []
-    for gid, gdata in cfg.get("groups", {}).items():
-        series_ids = [s["id"] for s in gdata["series"]]
+    if updated_ids is not None:
+        groups = _groups_with_updates(cfg, updated_ids)
+    else:
+        groups = list(cfg.get("groups", {}).items())
 
+    for gid, gdata in groups:
+        series_ids = [s["id"] for s in gdata["series"]]
         for calc_type, suffix in [("period_pct", " Period %"), ("yoy_pct", " YoY %")]:
             sub_dir = output_dir / calc_type
             path = _export_group(gid, series_ids, sub_dir,
                                  table="calculated", calc_type=calc_type,
                                  suffix=suffix, db_path=db_path)
             paths.append(path)
-
     return paths
+
+
+def write_manifest(updated_groups: list, manifest_path: Path = MANIFEST_PATH):
+    """Write/update manifest with timestamps for changed groups.
+
+    Apps Script reads this to decide which tabs to re-import.
+    """
+    # Load existing manifest
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text())
+    else:
+        manifest = {}
+
+    now = datetime.now().isoformat(timespec="seconds")
+    for gid in updated_groups:
+        manifest[gid] = now
+
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")

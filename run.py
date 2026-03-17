@@ -8,7 +8,7 @@ from econ_data.fetch import fetch_all
 from econ_data.fetch_mnd import fetch_mnd
 from econ_data.store_sqlite import get_last_dates, get_fetch_log, save, save_fetch_log, save_groups
 from econ_data.daily_analysis import generate_daily_analysis
-from econ_data.export_sheets import export_all_groups, export_all_groups_calcs
+from econ_data.export_sheets import export_all_groups, export_all_groups_calcs, write_manifest
 from econ_data.summary import generate_summary, format_summary, format_signals_by_recency
 
 
@@ -120,9 +120,12 @@ if __name__ == "__main__":
     # ── Export and push to GitHub when new data arrived ────────────
     if new_obs:
         log("Exporting Sheets data...")
-        paths = export_all_groups(cfg)
-        calc_paths = export_all_groups_calcs(cfg)
-        log(f"Exported {len(paths)} value CSVs + {len(calc_paths)} calc CSVs")
+        paths = export_all_groups(cfg, updated_ids=updated_ids)
+        calc_paths = export_all_groups_calcs(cfg, updated_ids=updated_ids)
+        updated_groups = [gid for gid, gdata in cfg.get("groups", {}).items()
+                          if {s["id"] for s in gdata["series"]} & updated_ids]
+        write_manifest(updated_groups)
+        log(f"Exported {len(paths)} value CSVs + {len(calc_paths)} calc CSVs ({len(updated_groups)} groups changed)")
 
         try:
             subprocess.run(

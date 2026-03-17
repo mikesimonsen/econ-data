@@ -5,22 +5,21 @@
  * 1. Open your Google Sheet
  * 2. Extensions → Apps Script
  * 3. Paste this entire file
- * 4. Run importAllGroups() manually to test
- * 5. Set up a daily trigger: Edit → Triggers → Add Trigger
- *    - Function: importAllGroups
+ * 4. Run importAllGroups() manually for the initial load
+ * 5. Set up a daily trigger: Triggers → Add Trigger
+ *    - Function: importUpdatedGroups
  *    - Event source: Time-driven
  *    - Type: Day timer
  *    - Time: 8-9 AM (after your 7 AM pipeline run)
  */
 
 // ── Configuration ────────────────────────────────────────────
-const GITHUB_OWNER = "mikesimonsen";
-const GITHUB_REPO = "econ-data";
-const GITHUB_BRANCH = "main";
+var GITHUB_OWNER = "mikesimonsen";
+var GITHUB_REPO = "econ-data";
+var GITHUB_BRANCH = "main";
 
 // Which groups to import, and what to name the Sheet tabs.
-// Comment out any you don't want.
-const GROUPS = [
+var GROUPS = [
   { file: "cpi", tab: "CPI" },
   { file: "cpi-metro", tab: "CPI Metro" },
   { file: "pce", tab: "PCE" },
@@ -46,22 +45,66 @@ const GROUPS = [
 // ── Main functions ───────────────────────────────────────────
 
 /**
- * Import raw values, period % change, and YoY % change for all groups.
+ * Daily trigger: only re-imports groups that have new data since last run.
+ * Set this as your daily trigger.
+ */
+function importUpdatedGroups() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var props = PropertiesService.getScriptProperties();
+  var lastRun = props.getProperty("lastManifestCheck") || "";
+
+  // Fetch manifest to see what changed
+  var manifest = fetchManifest();
+  if (!manifest) {
+    Logger.log("Could not fetch manifest — skipping");
+    return;
+  }
+
+  // Find groups that were updated since our last run
+  var updatedFiles = [];
+  for (var fileId in manifest) {
+    if (manifest[fileId] > lastRun) {
+      updatedFiles.push(fileId);
+    }
+  }
+
+  if (updatedFiles.length === 0) {
+    Logger.log("No groups updated since last run");
+    updateTimestamp(ss);
+    return;
+  }
+
+  Logger.log("Groups to update: " + updatedFiles.join(", "));
+
+  // Import only the changed groups
+  GROUPS.forEach(function (group) {
+    if (updatedFiles.indexOf(group.file) === -1) return;
+
+    importOne(ss, "sheets_data", group.file, group.tab);
+    importOne(ss, "sheets_data_calcs/period_pct", group.file, group.tab + " Period%");
+    importOne(ss, "sheets_data_calcs/yoy_pct", group.file, group.tab + " YoY%");
+  });
+
+  // Remember when we last checked
+  props.setProperty("lastManifestCheck", new Date().toISOString());
+  updateTimestamp(ss);
+}
+
+/**
+ * Full import of all groups — use for initial setup or manual refresh.
  */
 function importAllGroups() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
   GROUPS.forEach(function (group) {
-    // Raw values
     importOne(ss, "sheets_data", group.file, group.tab);
-
-    // Period % change
     importOne(ss, "sheets_data_calcs/period_pct", group.file, group.tab + " Period%");
-
-    // YoY % change
     importOne(ss, "sheets_data_calcs/yoy_pct", group.file, group.tab + " YoY%");
   });
 
+  // Set the checkpoint so importUpdatedGroups knows where to start
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty("lastManifestCheck", new Date().toISOString());
   updateTimestamp(ss);
 }
 
@@ -89,6 +132,21 @@ function importCalcsOnly() {
 }
 
 // ── Helpers ──────────────────────────────────────────────────
+
+function fetchManifest() {
+  var url = "https://raw.githubusercontent.com/"
+    + GITHUB_OWNER + "/" + GITHUB_REPO + "/"
+    + GITHUB_BRANCH + "/sheets_data/last_updated.json";
+
+  var response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+
+  if (response.getResponseCode() !== 200) {
+    Logger.log("Manifest fetch failed: HTTP " + response.getResponseCode());
+    return null;
+  }
+
+  return JSON.parse(response.getContentText());
+}
 
 function importOne(ss, dataDir, filename, tabName) {
   try {
