@@ -119,7 +119,7 @@ def fetch_all(series: list, last_dates: dict = None,
             fetched += 1
         except Exception as e:
             ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"[{ts}] SKIPPED {series_id} — {e}", file=sys.stderr)
+            print(f"[{ts}] SKIPPED {series_id} — {e}")
             counts[series_id] = -1
             fetched += 1
 

@@ -39,7 +39,7 @@ def fetch_mnd(last_dates: dict = None) -> dict:
         data = resp.json()
     except Exception as e:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{ts}] SKIPPED MND fetch — {e}", file=sys.stderr)
+        print(f"[{ts}] SKIPPED MND fetch — {e}")
         for series_id, _ in PRODUCTS.values():
             counts[series_id] = -1
         return {"new": all_new, "counts": counts}
