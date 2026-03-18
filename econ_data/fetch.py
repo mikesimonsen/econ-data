@@ -16,9 +16,9 @@ API_DELAY = 0.6  # seconds
 # Minimum days between API checks per frequency
 CHECK_INTERVALS = {
     "daily": 1,       # check every day
-    "weekly": 3,      # check every 3 days
-    "monthly": 7,     # check weekly for monthly series
-    "quarterly": 14,
+    "weekly": 2,      # check every 2 days
+    "monthly": 2,     # check every 2 days (releases aren't predictable)
+    "quarterly": 7,
 }
 
 
