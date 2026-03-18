@@ -13,12 +13,12 @@ load_dotenv()
 # Delay between FRED API calls to avoid rate limiting (120 req/min)
 API_DELAY = 0.6  # seconds
 
-# Minimum days between API checks per frequency
-CHECK_INTERVALS = {
-    "daily": 1,       # check every day
-    "weekly": 2,      # check every 2 days
-    "monthly": 2,     # check every 2 days (releases aren't predictable)
-    "quarterly": 7,
+# After receiving new data, wait this many days before checking again
+COOLDOWN_DAYS = {
+    "daily": 0,       # always check
+    "weekly": 4,      # wait 4 days after last observation
+    "monthly": 21,    # wait 3 weeks after last observation
+    "quarterly": 70,  # wait ~10 weeks after last observation
 }
 
 
@@ -39,19 +39,31 @@ def _detect_frequency(series_id: str) -> str:
     return "monthly"
 
 
-def _should_fetch(series_id: str, last_checked: date = None) -> bool:
+def _should_fetch(series_id: str, last_obs: date = None,
+                  last_checked: date = None) -> bool:
     """Decide if it's time to check FRED for new data.
 
-    Based on how long since we last checked, not when data was last observed.
+    Logic per frequency:
+      - After receiving new data, wait COOLDOWN_DAYS before checking again.
+      - Once the cooldown expires, check daily until new data arrives.
+      - Never re-check on the same day we already checked.
     """
-    if last_checked is None:
-        return True  # never checked
+    if last_obs is None:
+        return True  # never fetched — always check
+
+    if last_checked is not None and last_checked >= date.today():
+        return False  # already checked today
 
     freq = _detect_frequency(series_id)
-    interval = CHECK_INTERVALS.get(freq, 7)
-    days_since_check = (date.today() - last_checked).days
+    cooldown = COOLDOWN_DAYS.get(freq, 21)
+    days_since_obs = (date.today() - last_obs).days
 
-    return days_since_check >= interval
+    # Still in cooldown period after last observation — skip
+    if days_since_obs <= cooldown:
+        return False
+
+    # Cooldown expired — check daily until new data arrives
+    return True
 
 
 def fetch_series(series_id: str, name: str, since: date = None) -> list:
@@ -79,8 +91,9 @@ def fetch_all(series: list, last_dates: dict = None,
     """
     Fetch updates for all (series_id, name) pairs.
 
-    Uses smart scheduling: only hits the FRED API when enough time has passed
-    since the last check, based on each series' frequency.
+    Uses smart scheduling based on observation recency:
+      - Recently updated series sleep for a cooldown period
+      - Series past their cooldown get checked daily until new data arrives
 
     last_dates: {series_id: date} of the most recent observation in the DB.
     last_checked: {series_id: date} of when each series was last checked.
@@ -100,9 +113,10 @@ def fetch_all(series: list, last_dates: dict = None,
     fetched = 0
 
     for series_id, name in series:
+        last_obs = last_dates.get(series_id)
         lc = last_checked.get(series_id)
 
-        if not _should_fetch(series_id, lc):
+        if not _should_fetch(series_id, last_obs, lc):
             counts[series_id] = 0
             continue
 
@@ -110,9 +124,8 @@ def fetch_all(series: list, last_dates: dict = None,
         if fetched > 0:
             time.sleep(API_DELAY)
 
-        since = last_dates.get(series_id)
         try:
-            results = fetch_series(series_id, name, since=since)
+            results = fetch_series(series_id, name, since=last_obs)
             counts[series_id] = len(results)
             all_new.extend(results)
             checked.append(series_id)
