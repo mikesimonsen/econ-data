@@ -70,24 +70,26 @@ function importUpdatedGroups() {
 
   if (updatedFiles.length === 0) {
     Logger.log("No groups updated since last run");
-    updateTimestamp(ss);
+    logUpdate(ss, []);
     return;
   }
 
   Logger.log("Groups to update: " + updatedFiles.join(", "));
 
-  // Import only the changed groups
+  // Map file IDs to tab names for logging
+  var updatedTabs = [];
   GROUPS.forEach(function (group) {
     if (updatedFiles.indexOf(group.file) === -1) return;
 
     importOne(ss, "sheets_data", group.file, group.tab);
     importOne(ss, "sheets_data_calcs/period_pct", group.file, group.tab + " Period%");
     importOne(ss, "sheets_data_calcs/yoy_pct", group.file, group.tab + " YoY%");
+    updatedTabs.push(group.tab);
   });
 
   // Remember when we last checked
   props.setProperty("lastManifestCheck", new Date().toISOString());
-  updateTimestamp(ss);
+  logUpdate(ss, updatedTabs);
 }
 
 /**
@@ -105,7 +107,8 @@ function importAllGroups() {
   // Set the checkpoint so importUpdatedGroups knows where to start
   var props = PropertiesService.getScriptProperties();
   props.setProperty("lastManifestCheck", new Date().toISOString());
-  updateTimestamp(ss);
+  var allTabs = GROUPS.map(function (g) { return g.tab; });
+  logUpdate(ss, allTabs);
 }
 
 /**
@@ -116,7 +119,7 @@ function importValuesOnly() {
   GROUPS.forEach(function (group) {
     importOne(ss, "sheets_data", group.file, group.tab);
   });
-  updateTimestamp(ss);
+  logUpdate(ss, []);
 }
 
 /**
@@ -128,7 +131,7 @@ function importCalcsOnly() {
     importOne(ss, "sheets_data_calcs/period_pct", group.file, group.tab + " Period%");
     importOne(ss, "sheets_data_calcs/yoy_pct", group.file, group.tab + " YoY%");
   });
-  updateTimestamp(ss);
+  logUpdate(ss, []);
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -195,12 +198,26 @@ function writeToSheet(ss, tabName, data) {
   }
 }
 
-function updateTimestamp(ss) {
+function logUpdate(ss, updatedTabs) {
   var sheet = ss.getSheetByName("Info");
   if (!sheet) {
     sheet = ss.insertSheet("Info", 0);
   }
-  sheet.getRange("A1").setValue("Last updated");
-  sheet.getRange("B1").setValue(new Date());
-  sheet.getRange("A1").setFontWeight("bold");
+
+  // Set up header if it doesn't exist
+  if (sheet.getRange("A1").getValue() !== "Date") {
+    sheet.getRange("A1:C1").setValues([["Date", "Status", "Groups Updated"]]);
+    sheet.getRange("A1:C1").setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    sheet.setColumnWidth(1, 160);
+    sheet.setColumnWidth(2, 120);
+    sheet.setColumnWidth(3, 600);
+  }
+
+  // Add today's entry at row 2 (newest on top)
+  sheet.insertRowAfter(1);
+  var now = new Date();
+  var status = updatedTabs.length > 0 ? updatedTabs.length + " groups" : "No new data";
+  var groups = updatedTabs.length > 0 ? updatedTabs.join(", ") : "—";
+  sheet.getRange("A2:C2").setValues([[now, status, groups]]);
 }
