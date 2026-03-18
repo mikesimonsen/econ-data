@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS observations (
     name        TEXT    NOT NULL,
     date        TEXT    NOT NULL,
     value       REAL    NOT NULL,
+    captured_at TEXT,
     PRIMARY KEY (series_id, date)
 );
 CREATE TABLE IF NOT EXISTS groups (
@@ -37,15 +38,27 @@ CREATE TABLE IF NOT EXISTS fetch_log (
 def _connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
     con = sqlite3.connect(db_path)
     con.executescript(CREATE_TABLES)
+    _migrate(con)
     return con
 
 
+def _migrate(con: sqlite3.Connection):
+    """Add columns that may not exist in older databases."""
+    cols = {row[1] for row in con.execute("PRAGMA table_info(observations)")}
+    if "captured_at" not in cols:
+        con.execute("ALTER TABLE observations ADD COLUMN captured_at TEXT")
+        con.commit()
+
+
 def save(observations: list, db_path: Path = DB_PATH) -> int:
-    """Upsert observations. Returns number of rows inserted/replaced."""
+    """Upsert observations with capture timestamp. Returns number of rows inserted/replaced."""
+    from datetime import datetime
+    now = datetime.now().isoformat(timespec="seconds")
     con = _connect(db_path)
-    rows = [(o.series_id, o.name, o.date.isoformat(), o.value) for o in observations]
+    rows = [(o.series_id, o.name, o.date.isoformat(), o.value, now) for o in observations]
     cur = con.executemany(
-        "INSERT OR REPLACE INTO observations (series_id, name, date, value) VALUES (?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO observations (series_id, name, date, value, captured_at) "
+        "VALUES (?, ?, ?, ?, ?)",
         rows,
     )
     con.commit()
