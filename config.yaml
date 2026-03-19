@@ -272,6 +272,8 @@ groups:
         name: "Average Sales Price - New Homes"
       - id: MSACSR
         name: "Months Supply of New Houses"
+      - id: HNFSEPUSSA
+        name: "New Houses For Sale (SAAR)"
 
   construction-spending:
     name: "Construction Spending (Census)"
