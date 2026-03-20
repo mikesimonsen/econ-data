@@ -21,7 +21,7 @@ def generate_daily_analysis(signals_text: str, summary_text: str) -> str:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY not set in .env")
-    client = anthropic.Anthropic(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key, timeout=120.0)
 
     user_content = f"SIGNALS:\n{signals_text}\n\nFULL SUMMARY:\n{summary_text}"
 
