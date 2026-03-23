@@ -66,6 +66,9 @@ def _should_fetch(series_id: str, last_obs: date = None,
     return True
 
 
+REVISION_LOOKBACK_MONTHS = 4  # re-fetch this many months to catch revisions
+
+
 def fetch_series(series_id: str, name: str, since: date = None) -> list:
     """
     Fetch observations for a FRED series.
@@ -86,6 +89,31 @@ def fetch_series(series_id: str, name: str, since: date = None) -> list:
     ]
 
 
+def fetch_series_with_revisions(series_id: str, name: str,
+                                last_obs: date = None) -> list:
+    """Fetch recent observations including the revision window.
+
+    Returns ALL observations from (last_obs - REVISION_LOOKBACK_MONTHS) forward,
+    so the caller can compare against stored values to detect revisions.
+    """
+    fred = Fred(api_key=os.environ["FRED_API_KEY"])
+    if last_obs:
+        lookback = last_obs - timedelta(days=REVISION_LOOKBACK_MONTHS * 31)
+        start = lookback.isoformat()
+    else:
+        start = None
+
+    kwargs = {}
+    if start:
+        kwargs["observation_start"] = start
+    data: pd.Series = fred.get_series(series_id, **kwargs)
+    return [
+        Observation(series_id=series_id, name=name, date=d.date(), value=float(v))
+        for d, v in data.items()
+        if pd.notna(v)
+    ]
+
+
 def fetch_all(series: list, last_dates: dict = None,
               last_checked: dict = None) -> dict:
     """
@@ -94,13 +122,16 @@ def fetch_all(series: list, last_dates: dict = None,
     Uses smart scheduling based on observation recency:
       - Recently updated series sleep for a cooldown period
       - Series past their cooldown get checked daily until new data arrives
+    When fetching, pulls last 4 months of data to detect revisions.
 
     last_dates: {series_id: date} of the most recent observation in the DB.
     last_checked: {series_id: date} of when each series was last checked.
     Returns {"new": [Observation, ...], "counts": {series_id: int},
-             "checked": [series_id, ...]}
-    where counts is:  >0 = new observations,  0 = no new data or skipped,  -1 = error
-    and checked is the list of series that were actually queried (for updating fetch_log).
+             "checked": [series_id, ...], "all_fetched": [Observation, ...]}
+    counts:  >0 = new observations,  0 = no new data or skipped,  -1 = error
+    checked: series that were actually queried (for updating fetch_log)
+    all_fetched: all observations returned (including revision window), for
+        revision detection before save
     """
     if last_dates is None:
         last_dates = {}
@@ -108,6 +139,7 @@ def fetch_all(series: list, last_dates: dict = None,
         last_checked = {}
 
     all_new = []
+    all_fetched = []
     counts = {}
     checked = []
     fetched = 0
@@ -125,9 +157,22 @@ def fetch_all(series: list, last_dates: dict = None,
             time.sleep(API_DELAY)
 
         try:
-            results = fetch_series(series_id, name, since=last_obs)
-            counts[series_id] = len(results)
-            all_new.extend(results)
+            freq = _detect_frequency(series_id)
+            if freq == "daily":
+                # Daily series: just fetch new data, no revision tracking
+                results = fetch_series(series_id, name, since=last_obs)
+                new_only = results
+            else:
+                # Weekly/monthly: fetch revision window to catch changes
+                results = fetch_series_with_revisions(series_id, name,
+                                                     last_obs=last_obs)
+                # New observations are those with dates after last_obs
+                new_only = [o for o in results
+                            if last_obs is None or o.date > last_obs]
+
+            counts[series_id] = len(new_only)
+            all_new.extend(new_only)
+            all_fetched.extend(results)
             checked.append(series_id)
             fetched += 1
         except Exception as e:
@@ -136,4 +181,5 @@ def fetch_all(series: list, last_dates: dict = None,
             counts[series_id] = -1
             fetched += 1
 
-    return {"new": all_new, "counts": counts, "checked": checked}
+    return {"new": all_new, "counts": counts, "checked": checked,
+            "all_fetched": all_fetched}

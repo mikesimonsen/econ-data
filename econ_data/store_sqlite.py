@@ -32,6 +32,15 @@ CREATE TABLE IF NOT EXISTS fetch_log (
     series_id   TEXT    PRIMARY KEY,
     last_checked TEXT   NOT NULL
 );
+CREATE TABLE IF NOT EXISTS revisions (
+    series_id    TEXT    NOT NULL,
+    date         TEXT    NOT NULL,
+    old_value    REAL    NOT NULL,
+    new_value    REAL    NOT NULL,
+    pct_change   REAL    NOT NULL,
+    detected_at  TEXT    NOT NULL,
+    PRIMARY KEY (series_id, date, detected_at)
+);
 """
 
 
@@ -117,6 +126,101 @@ def save_fetch_log(series_ids: list, db_path: Path = DB_PATH) -> None:
     )
     con.commit()
     con.close()
+
+
+def get_recent_observations(series_id: str, months: int = 4,
+                            db_path: Path = DB_PATH) -> dict:
+    """Return {date_str: value} for the last N months of a series."""
+    from datetime import date, timedelta
+    cutoff = (date.today() - timedelta(days=months * 31)).isoformat()
+    con = _connect(db_path)
+    rows = con.execute(
+        "SELECT date, value FROM observations "
+        "WHERE series_id = ? AND date >= ? ORDER BY date",
+        (series_id, cutoff),
+    ).fetchall()
+    con.close()
+    return {d: v for d, v in rows}
+
+
+def detect_and_save_revisions(observations: list,
+                              db_path: Path = DB_PATH) -> list:
+    """Compare incoming observations against stored values. Save and return revisions.
+
+    Returns list of dicts: {series_id, name, date, old_value, new_value, pct_change}
+    """
+    from datetime import datetime
+
+    if not observations:
+        return []
+
+    now = datetime.now().isoformat(timespec="seconds")
+    con = _connect(db_path)
+
+    # Build lookup of existing values for the series/dates we're about to save
+    revisions = []
+    for obs in observations:
+        date_str = obs.date.isoformat()
+        row = con.execute(
+            "SELECT value FROM observations WHERE series_id = ? AND date = ?",
+            (obs.series_id, date_str),
+        ).fetchone()
+
+        if row is None:
+            continue  # new observation, not a revision
+
+        old_value = row[0]
+        if old_value == obs.value:
+            continue  # unchanged
+
+        # Calculate % change of the revision
+        if old_value != 0:
+            pct_change = round((obs.value - old_value) / abs(old_value) * 100, 4)
+        else:
+            pct_change = 0.0
+
+        revisions.append({
+            "series_id": obs.series_id,
+            "name": obs.name,
+            "date": date_str,
+            "old_value": old_value,
+            "new_value": obs.value,
+            "pct_change": pct_change,
+        })
+
+        con.execute(
+            "INSERT OR IGNORE INTO revisions "
+            "(series_id, date, old_value, new_value, pct_change, detected_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (obs.series_id, date_str, old_value, obs.value, pct_change, now),
+        )
+
+    con.commit()
+    con.close()
+    return revisions
+
+
+def get_recent_revisions(days: int = 7, db_path: Path = DB_PATH) -> list:
+    """Return revisions detected in the last N days."""
+    from datetime import date, timedelta
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    con = _connect(db_path)
+    rows = con.execute(
+        "SELECT r.series_id, o.name, r.date, r.old_value, r.new_value, "
+        "r.pct_change, r.detected_at "
+        "FROM revisions r "
+        "LEFT JOIN (SELECT DISTINCT series_id, name FROM observations) o "
+        "ON r.series_id = o.series_id "
+        "WHERE r.detected_at >= ? "
+        "ORDER BY abs(r.pct_change) DESC",
+        (cutoff,),
+    ).fetchall()
+    con.close()
+    return [
+        {"series_id": r[0], "name": r[1], "date": r[2], "old_value": r[3],
+         "new_value": r[4], "pct_change": r[5], "detected_at": r[6]}
+        for r in rows
+    ]
 
 
 def save_groups(cfg: dict, db_path: Path = DB_PATH) -> None:

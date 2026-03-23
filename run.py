@@ -6,7 +6,10 @@ from econ_data.calculations import compute_all
 from econ_data.config import load, all_series, fred_series
 from econ_data.fetch import fetch_all
 from econ_data.fetch_mnd import fetch_mnd
-from econ_data.store_sqlite import get_last_dates, get_fetch_log, save, save_fetch_log, save_groups
+from econ_data.store_sqlite import (
+    get_last_dates, get_fetch_log, save, save_fetch_log, save_groups,
+    detect_and_save_revisions, get_recent_revisions,
+)
 from econ_data.daily_analysis import generate_daily_analysis
 from econ_data.export_sheets import export_all_groups, export_all_groups_calcs, write_manifest
 from econ_data.summary import generate_summary, format_summary, format_signals_by_recency
@@ -15,6 +18,25 @@ from econ_data.summary import generate_summary, format_summary, format_signals_b
 def log(msg=""):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{ts}] {msg}")
+
+
+def format_revisions(revisions: list) -> str:
+    """Format revisions into a readable block for signals/analysis."""
+    if not revisions:
+        return ""
+    lines = ["  ┌─────────────────────────────┐",
+             "  │     DATA REVISIONS           │",
+             "  └─────────────────────────────┘", ""]
+    for r in revisions:
+        direction = "↑" if r["new_value"] > r["old_value"] else "↓"
+        lines.append(
+            f"    {r['series_id']:<20} {r['date']}  "
+            f"{r['old_value']:>10,.1f} → {r['new_value']:>10,.1f}  "
+            f"{direction} {r['pct_change']:+.2f}%"
+        )
+        if r.get("name"):
+            lines.append(f"    {'':20} {r['name']}")
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":
@@ -35,14 +57,29 @@ if __name__ == "__main__":
     if result.get("checked"):
         save_fetch_log(result["checked"])
 
+    # Detect revisions BEFORE saving new data (compare fetched vs stored)
+    all_fetched = result.get("all_fetched", [])
+    revisions = detect_and_save_revisions(all_fetched)
+    if revisions:
+        log(f"Revisions detected ({len(revisions)}):")
+        for r in revisions:
+            log(f"  {r['series_id']:<20} {r['date']}  {r['old_value']:.1f} → {r['new_value']:.1f}  ({r['pct_change']:+.2f}%)")
+
+    # Save all fetched data (new + revised values)
+    if all_fetched:
+        save(all_fetched)
+
     # Fetch Mortgage News Daily
     mnd_result = fetch_mnd(last_dates=last_dates)
     result["new"].extend(mnd_result["new"])
     result["counts"].update(mnd_result["counts"])
 
+    if mnd_result["new"]:
+        save(mnd_result["new"])
+
     counts = result["counts"]
 
-    updated, current, skipped, errors = [], [], [], []
+    updated, current, errors = [], [], []
     for series_id, name in series:
         n = counts.get(series_id, 0)
         if n > 0:
@@ -64,11 +101,8 @@ if __name__ == "__main__":
         log(f"Errors ({len(errors)}): {', '.join(errors)}")
 
     new_obs = result["new"]
-    if new_obs:
-        saved = save(new_obs)
-        log(f"Saved {saved} new rows to SQLite.")
-    else:
-        log("No new data.")
+    if not new_obs and not revisions:
+        log("No new data or revisions.")
 
     save_groups(cfg)
 
@@ -90,8 +124,13 @@ if __name__ == "__main__":
     summary_path.write_text(summary_header + report + "\n")
     log(f"Summary saved to {summary_path}")
 
-    # Signals split by recency
+    # Signals split by recency + revisions
     signals_report = format_signals_by_recency(summary, updated_ids)
+    recent_revisions = get_recent_revisions(days=7)
+    revisions_block = format_revisions(recent_revisions)
+    if revisions_block:
+        signals_report = revisions_block + "\n\n" + signals_report
+
     signals_path = summary_dir / f"signals {today}.txt"
     signals_header = f"  === Signals — {today} ===\n\n"
     signals_path.write_text(signals_header + signals_report + "\n")
@@ -118,14 +157,18 @@ if __name__ == "__main__":
         log(f"Daily analysis failed: {e}")
 
     # ── Export and push to GitHub when new data arrived ────────────
-    if new_obs:
+    has_changes = new_obs or revisions
+    if has_changes:
         log("Exporting Sheets data...")
-        paths = export_all_groups(cfg, updated_ids=updated_ids)
-        calc_paths = export_all_groups_calcs(cfg, updated_ids=updated_ids)
-        updated_groups = [gid for gid, gdata in cfg.get("groups", {}).items()
-                          if {s["id"] for s in gdata["series"]} & updated_ids]
-        write_manifest(updated_groups)
-        log(f"Exported {len(paths)} value CSVs + {len(calc_paths)} calc CSVs ({len(updated_groups)} groups changed)")
+        # Include groups with revisions in the export
+        revision_ids = {r["series_id"] for r in revisions}
+        export_ids = updated_ids | revision_ids
+        paths = export_all_groups(cfg, updated_ids=export_ids)
+        calc_paths = export_all_groups_calcs(cfg, updated_ids=export_ids)
+        changed_groups = [gid for gid, gdata in cfg.get("groups", {}).items()
+                          if {s["id"] for s in gdata["series"]} & export_ids]
+        write_manifest(changed_groups)
+        log(f"Exported {len(paths)} value CSVs + {len(calc_paths)} calc CSVs ({len(changed_groups)} groups changed)")
 
         try:
             subprocess.run(

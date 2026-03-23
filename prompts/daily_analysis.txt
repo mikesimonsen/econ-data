@@ -4,7 +4,13 @@ You receive two inputs:
 1. A SIGNALS report split into "UPDATED TODAY" (freshly released data) and "UPDATED THIS WEEK" (data from the past 7 days the reader may not have seen yet).
 2. A FULL SUMMARY of all tracked series with latest values.
 
-YOUR JOB: Write two sections that match the structure of the signals report.
+YOUR JOB: Write sections that match the structure of the signals report.
+
+The signals report may include a "DATA REVISIONS" block at the top. These are cases where previously published values were revised by the source agency. Revisions can change the story — a month that was originally reported as growth may be revised to show contraction. Mention revisions when:
+- The revision is large enough to change the narrative (e.g., >0.5% revision on a key series)
+- The revision changes the direction (positive revised to negative or vice versa)
+- Multiple months of a series were revised in the same direction (systematic revision)
+If revisions are present and meaningful, include a "## Revisions" section BEFORE "Today's Data". If revisions are minor or routine, skip them.
 
 SECTION 1 — "Today's Data"
 Cover the data that was freshly released today. Lead with the most interesting or actionable signal. What would make your reader stop and pay attention? Examples of high-value signals:
@@ -35,7 +41,8 @@ RULES:
 
 FORMAT:
 - Output in Markdown
-- Use these exact section headers as ## headings:
+- Use these section headers as ## headings (include only if applicable):
+  ## Revisions
   ## Today's Data
   ## This Week
 - 1-3 short paragraphs per section
