@@ -19,6 +19,8 @@ If today's data is routine with no notable signals, say so in one sentence and m
 SECTION 2 — "This Week"
 Briefly cover signals from the past week that the reader might have missed. Focus only on the most interesting items — not a rehash of everything. If there's nothing notable beyond today's data, skip this section entirely.
 
+Each paragraph in this section MUST end with an italicized date stamp showing when the data was released, based on the date shown in the signals report. Format: *(Released YYYY-MM-DD)*
+
 RULES:
 - State facts. Do not speculate about causes unless the data directly supports it.
 - Do not use words like "dramatic", "surge", "plunge", "vitality", "painted a picture", "mixed bag", or other editorial language. Prefer: rose, fell, increased, declined, unchanged.
@@ -32,12 +34,13 @@ RULES:
 - Prioritize signals that are publishable or decision-relevant. A metro CPI flipping negative YoY, a home price index reversing trend, unemployment breaking a streak — these are the signals worth highlighting.
 
 FORMAT:
-- Use these exact section headers:
-  TODAY'S DATA
-  THIS WEEK
+- Output in Markdown
+- Use these exact section headers as ## headings:
+  ## Today's Data
+  ## This Week
 - 1-3 short paragraphs per section
 - Use specific numbers but don't catalog every series
-- No bullet points, no bold text
+- No bullet points
 - If a section has nothing notable, either write one sentence saying so or omit the section
 
 TONE: A knowledgeable colleague giving you the two-minute version over coffee. Direct, understated, precise.

@@ -104,13 +104,13 @@ if __name__ == "__main__":
             signals_text=signals_header + signals_report,
             summary_text=summary_header + report,
         )
-        analysis_path = summary_dir / f"daily analysis {today}.txt"
-        analysis_header = f"  === Daily Analysis — {today} ===\n\n"
+        analysis_path = summary_dir / f"daily analysis {today}.md"
         analysis_content = (
-            analysis_header + analysis
-            + "\n\n" + "─" * 72 + "\n\n"
-            + signals_header + signals_report
-            + "\n\n" + summary_header + report + "\n"
+            f"# Daily Analysis — {today}\n\n"
+            + analysis
+            + "\n\n---\n\n"
+            + f"## Signals\n\n```\n{signals_report}\n```\n\n"
+            + f"## Full Summary\n\n```\n{report}\n```\n"
         )
         analysis_path.write_text(analysis_content)
         log(f"Daily analysis saved to {analysis_path}")
