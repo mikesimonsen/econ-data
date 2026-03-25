@@ -69,8 +69,11 @@ def interactive():
     print("    v) Values (raw)")
     print("    p) Period-over-period % change")
     print("    y) Year-over-year % change")
+    print("   pp) Period-over-period pp change (for rate series)")
+    print("   yp) Year-over-year pp change (for rate series)")
     dt_choice = input("\n  Data type [v]: ").strip().lower()
-    data_type = {"p": "period_pct", "y": "yoy_pct"}.get(dt_choice, "values")
+    data_type = {"p": "period_pct", "y": "yoy_pct",
+                  "pp": "period_pp", "yp": "yoy_pp"}.get(dt_choice, "values")
 
     # Format
     print("\n  Format:")
@@ -113,7 +116,7 @@ def main():
     parser.add_argument("series", nargs="*", help="FRED series IDs to compare")
     parser.add_argument("-i", "--interactive", action="store_true",
                         help="Interactive mode with keyword search")
-    parser.add_argument("--data", choices=["values", "period_pct", "yoy_pct"],
+    parser.add_argument("--data", choices=["values", "period_pct", "yoy_pct", "period_pp", "yoy_pp"],
                         default="values", help="Data type (default: values)")
     parser.add_argument("--name", help="Name for the comparison output file")
     parser.add_argument("--format", choices=["excel", "csv"], default="excel",

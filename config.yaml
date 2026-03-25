@@ -289,16 +289,22 @@ groups:
       # U-rates (all measures of labor underutilization)
       - id: UNRATE
         name: "U-3 Unemployment Rate (Official)"
+        units: percent
       - id: U1RATE
         name: "U-1 Unemployed 15+ Weeks as % of Labor Force"
+        units: percent
       - id: U2RATE
         name: "U-2 Job Losers as % of Labor Force"
+        units: percent
       - id: U4RATE
         name: "U-4 + Discouraged Workers"
+        units: percent
       - id: U5RATE
         name: "U-5 + Other Marginally Attached"
+        units: percent
       - id: U6RATE
         name: "U-6 + Part-Time for Economic Reasons"
+        units: percent
       # Unemployment by duration
       - id: UEMPLT5
         name: "Unemployed Less Than 5 Weeks (000s)"
@@ -323,8 +329,10 @@ groups:
         name: "Civilian Labor Force Level (000s)"
       - id: CIVPART
         name: "Labor Force Participation Rate"
+        units: percent
       - id: EMRATIO
         name: "Employment-Population Ratio"
+        units: percent
       - id: PAYEMS
         name: "Total Nonfarm Payrolls (000s)"
       - id: CES0500000003
@@ -347,12 +355,14 @@ groups:
         name: "Continuing Claims - 4 Week Average"
       - id: IURSA
         name: "Insured Unemployment Rate"
+        units: percent
 
   treasury-yields:
     name: "Treasury Yields (Daily)"
     series:
       - id: DGS10
         name: "10-Year Treasury Yield"
+        units: percent
 
   mortgage-rates:
     name: "Mortgage Rates (Mortgage News Daily)"
@@ -360,16 +370,22 @@ groups:
     series:
       - id: MND_30YR_FIXED
         name: "30-Year Fixed Mortgage Rate"
+        units: percent
       - id: MND_15YR_FIXED
         name: "15-Year Fixed Mortgage Rate"
+        units: percent
       - id: MND_30YR_FHA
         name: "30-Year FHA Mortgage Rate"
+        units: percent
       - id: MND_30YR_JUMBO
         name: "30-Year Jumbo Mortgage Rate"
+        units: percent
       - id: MND_7YR_ARM
         name: "7/6 SOFR ARM Rate"
+        units: percent
       - id: MND_30YR_VA
         name: "30-Year VA Mortgage Rate"
+        units: percent
 
   construction-employment:
     name: "Construction Employment (BLS)"

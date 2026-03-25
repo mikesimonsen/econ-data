@@ -5,7 +5,18 @@ import sqlite3
 import statistics
 from pathlib import Path
 
+from econ_data.config import load as load_config, percent_series
 from econ_data.store_sqlite import DB_PATH
+
+# Cached set of series IDs with percent units
+_PERCENT_IDS = None
+
+
+def _get_percent_ids():
+    global _PERCENT_IDS
+    if _PERCENT_IDS is None:
+        _PERCENT_IDS = percent_series(load_config())
+    return _PERCENT_IDS
 
 # Windows by frequency (observation counts approximating real-time spans)
 MONTHLY_TREND = 6        # 6 months
@@ -29,6 +40,9 @@ def _detect_frequency(rows: list) -> str:
 def _get_series_data(series_id: str, db_path: Path = DB_PATH) -> dict:
     """Get raw values and calculated changes for a series."""
     con = sqlite3.connect(db_path)
+    is_pct = series_id in _get_percent_ids()
+    period_type = "period_pp" if is_pct else "period_pct"
+    yoy_type = "yoy_pp" if is_pct else "yoy_pct"
 
     rows = con.execute(
         "SELECT date, value FROM observations WHERE series_id = ? ORDER BY date",
@@ -36,18 +50,18 @@ def _get_series_data(series_id: str, db_path: Path = DB_PATH) -> dict:
     ).fetchall()
 
     period_pct = dict(con.execute(
-        "SELECT date, value FROM calculated WHERE series_id = ? AND calc_type = 'period_pct' ORDER BY date",
-        (series_id,),
+        "SELECT date, value FROM calculated WHERE series_id = ? AND calc_type = ? ORDER BY date",
+        (series_id, period_type),
     ).fetchall())
 
     yoy_pct = dict(con.execute(
-        "SELECT date, value FROM calculated WHERE series_id = ? AND calc_type = 'yoy_pct' ORDER BY date",
-        (series_id,),
+        "SELECT date, value FROM calculated WHERE series_id = ? AND calc_type = ? ORDER BY date",
+        (series_id, yoy_type),
     ).fetchall())
 
     con.close()
 
-    return {"rows": rows, "period_pct": period_pct, "yoy_pct": yoy_pct}
+    return {"rows": rows, "period_pct": period_pct, "yoy_pct": yoy_pct, "is_percent": is_pct}
 
 
 def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
@@ -177,6 +191,7 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
         "trend_periods": trend_periods,
         "frequency": freq,
         "signals": signals,
+        "is_percent": data.get("is_percent", False),
     }
 
 
@@ -335,6 +350,14 @@ def _format_pct(val):
     return f"{sign}{val:.2f}%"
 
 
+def _format_pp(val):
+    """Format a percentage-point change."""
+    if val is None:
+        return "—"
+    sign = "+" if val > 0 else ""
+    return f"{sign}{val:.2f}pp"
+
+
 def _format_series(a: dict) -> list:
     """Format a single series analysis into output lines."""
     lines = []
@@ -364,8 +387,9 @@ def _format_series(a: dict) -> list:
     # Build the line — full date for daily, YYYY-MM for monthly
     date_str = a["latest_date"] if freq == "daily" else a["latest_date"][:7]
     val = _format_value(a["latest_value"])
-    pch = _format_pct(a["period_pct"])
-    yoy = _format_pct(a["yoy_pct"])
+    is_pct = a.get("is_percent", False)
+    pch = _format_pp(a["period_pct"]) if is_pct else _format_pct(a["period_pct"])
+    yoy = _format_pp(a["yoy_pct"]) if is_pct else _format_pct(a["yoy_pct"])
 
     line = f"    {a['series_id']:<16} {date_str}  {val:>10}  {arrow} {pch:>8}   YoY {yoy:>8}"
     if trend:

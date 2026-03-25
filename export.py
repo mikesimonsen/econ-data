@@ -126,10 +126,13 @@ def interactive_menu():
         print("    v) Values only (raw index/rate)")
         print("    p) Period-over-period % change")
         print("    y) Year-over-year % change")
-        print("    a) All (values + both % changes)")
+        print("   pp) Period-over-period pp change (for rate series)")
+        print("   yp) Year-over-year pp change (for rate series)")
+        print("    a) All (values + changes)")
 
         dt_choice = input("\n  Data type [v]: ").strip().lower()
-        data_type = {"p": "period_pct", "y": "yoy_pct", "a": "all"}.get(dt_choice, "values")
+        data_type = {"p": "period_pct", "y": "yoy_pct",
+                     "pp": "period_pp", "yp": "yoy_pp", "a": "all"}.get(dt_choice, "values")
         dt_label = DATA_TYPES[data_type]["label"]
 
         # ── Step 3: Format ──────────────────────────────────────
@@ -197,9 +200,9 @@ def cli_mode():
                         help="Specific series to export")
     parser.add_argument("--group", metavar="GROUP_ID",
                         help="Export all series in a group")
-    parser.add_argument("--data", choices=["values", "period_pct", "yoy_pct", "all"],
+    parser.add_argument("--data", choices=["values", "period_pct", "yoy_pct", "period_pp", "yoy_pp", "all"],
                         default="values",
-                        help="Data type: values, period_pct, yoy_pct, or all (default: values)")
+                        help="Data type: values, period_pct, yoy_pct, period_pp, yoy_pp, or all (default: values)")
     parser.add_argument("--output", metavar="PATH",
                         help="Output directory")
     parser.add_argument("--list", action="store_true",

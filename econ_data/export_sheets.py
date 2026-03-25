@@ -1,7 +1,7 @@
 """Export group data as wide-format CSVs for Google Sheets consumption.
 
 Each group gets one CSV: dates as rows, series as columns.
-Supports raw values, period_pct, and yoy_pct exports.
+Supports raw values, period_pct, yoy_pct, period_pp, and yoy_pp exports.
 Writes a manifest (last_updated.json) so consumers can skip unchanged groups.
 """
 
@@ -24,7 +24,7 @@ def _export_group(group_id: str, series_ids: list, output_dir: Path,
     """Export a group as a wide-format CSV.
 
     table: "observations" for raw values, "calculated" for derived series.
-    calc_type: "period_pct" or "yoy_pct" (only used when table="calculated").
+    calc_type: "period_pct", "yoy_pct", "period_pp", or "yoy_pp" (only used when table="calculated").
     suffix: appended to column names (e.g. " Period %").
     """
     con = sqlite3.connect(db_path)
@@ -115,7 +115,7 @@ def export_all_groups(cfg: dict, updated_ids: set = None,
 def export_all_groups_calcs(cfg: dict, updated_ids: set = None,
                             output_dir: Path = SHEETS_CALC_DIR,
                             db_path: Path = DB_PATH) -> list:
-    """Export period_pct and yoy_pct CSVs. Only exports groups with updated series."""
+    """Export period_pct, yoy_pct, period_pp, and yoy_pp CSVs. Only exports groups with updated series."""
     paths = []
     if updated_ids is not None:
         groups = _groups_with_updates(cfg, updated_ids)
@@ -124,7 +124,8 @@ def export_all_groups_calcs(cfg: dict, updated_ids: set = None,
 
     for gid, gdata in groups:
         series_ids = [s["id"] for s in gdata["series"]]
-        for calc_type, suffix in [("period_pct", " Period %"), ("yoy_pct", " YoY %")]:
+        for calc_type, suffix in [("period_pct", " Period %"), ("yoy_pct", " YoY %"),
+                                    ("period_pp", " Period pp"), ("yoy_pp", " YoY pp")]:
             sub_dir = output_dir / calc_type
             path = _export_group(gid, series_ids, sub_dir,
                                  table="calculated", calc_type=calc_type,

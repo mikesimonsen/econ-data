@@ -84,6 +84,8 @@ function importUpdatedGroups() {
     importOne(ss, "sheets_data", group.file, group.tab);
     importOne(ss, "sheets_data_calcs/period_pct", group.file, group.tab + " Period%");
     importOne(ss, "sheets_data_calcs/yoy_pct", group.file, group.tab + " YoY%");
+    importOne(ss, "sheets_data_calcs/period_pp", group.file, group.tab + " Period pp");
+    importOne(ss, "sheets_data_calcs/yoy_pp", group.file, group.tab + " YoY pp");
     updatedTabs.push(group.tab);
   });
 
@@ -102,6 +104,8 @@ function importAllGroups() {
     importOne(ss, "sheets_data", group.file, group.tab);
     importOne(ss, "sheets_data_calcs/period_pct", group.file, group.tab + " Period%");
     importOne(ss, "sheets_data_calcs/yoy_pct", group.file, group.tab + " YoY%");
+    importOne(ss, "sheets_data_calcs/period_pp", group.file, group.tab + " Period pp");
+    importOne(ss, "sheets_data_calcs/yoy_pp", group.file, group.tab + " YoY pp");
   });
 
   // Set the checkpoint so importUpdatedGroups knows where to start
@@ -130,6 +134,8 @@ function importCalcsOnly() {
   GROUPS.forEach(function (group) {
     importOne(ss, "sheets_data_calcs/period_pct", group.file, group.tab + " Period%");
     importOne(ss, "sheets_data_calcs/yoy_pct", group.file, group.tab + " YoY%");
+    importOne(ss, "sheets_data_calcs/period_pp", group.file, group.tab + " Period pp");
+    importOne(ss, "sheets_data_calcs/yoy_pp", group.file, group.tab + " YoY pp");
   });
   logUpdate(ss, []);
 }

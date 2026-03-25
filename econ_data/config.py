@@ -18,6 +18,19 @@ def all_series(cfg: dict) -> list:
     return result
 
 
+def percent_series(cfg: dict) -> set:
+    """Return set of series IDs that have units: percent."""
+    result = set()
+    for s in cfg.get("series", []):
+        if s.get("units") == "percent":
+            result.add(s["id"])
+    for group in cfg.get("groups", {}).values():
+        for s in group["series"]:
+            if s.get("units") == "percent":
+                result.add(s["id"])
+    return result
+
+
 def fred_series(cfg: dict) -> list:
     """Return (series_id, name) pairs for FRED-sourced series only."""
     result = [(s["id"], s["name"]) for s in cfg.get("series", [])]

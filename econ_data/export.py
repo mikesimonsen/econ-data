@@ -13,6 +13,8 @@ DATA_TYPES = {
     "values":     {"label": "Values",           "suffix": ""},
     "period_pct": {"label": "Period % Change",  "suffix": " period_pct"},
     "yoy_pct":    {"label": "YoY % Change",     "suffix": " yoy_pct"},
+    "period_pp":  {"label": "Period pp Change",  "suffix": " period_pp"},
+    "yoy_pp":     {"label": "YoY pp Change",     "suffix": " yoy_pp"},
     "all":        {"label": "All",              "suffix": ""},
 }
 
@@ -62,19 +64,26 @@ def _query_calc(series_ids: list, calc_type: str, db_path: Path = DB_PATH) -> di
 
 
 def _query_all(series_ids: list, db_path: Path = DB_PATH) -> dict:
-    """Return {series_id: {"name": str, "rows": [(date, value, period_pct, yoy_pct), ...]}}."""
+    """Return {series_id: {"name": str, "rows": [(date, value, period_chg, yoy_chg), ...]}}."""
     raw = _query_raw(series_ids, db_path)
-    period = _query_calc(series_ids, "period_pct", db_path)
-    yoy = _query_calc(series_ids, "yoy_pct", db_path)
+    period_pct = _query_calc(series_ids, "period_pct", db_path)
+    yoy_pct = _query_calc(series_ids, "yoy_pct", db_path)
+    period_pp = _query_calc(series_ids, "period_pp", db_path)
+    yoy_pp = _query_calc(series_ids, "yoy_pp", db_path)
 
     result = {}
     for series_id, info in raw.items():
+        # Use pp if available, otherwise pct
         period_map = {}
         yoy_map = {}
-        if series_id in period:
-            period_map = {d: v for d, v in period[series_id]["rows"]}
-        if series_id in yoy:
-            yoy_map = {d: v for d, v in yoy[series_id]["rows"]}
+        if series_id in period_pp:
+            period_map = {d: v for d, v in period_pp[series_id]["rows"]}
+        elif series_id in period_pct:
+            period_map = {d: v for d, v in period_pct[series_id]["rows"]}
+        if series_id in yoy_pp:
+            yoy_map = {d: v for d, v in yoy_pp[series_id]["rows"]}
+        elif series_id in yoy_pct:
+            yoy_map = {d: v for d, v in yoy_pct[series_id]["rows"]}
 
         combined = []
         for date_str, value in info["rows"]:
