@@ -82,10 +82,8 @@ function importUpdatedGroups() {
     if (updatedFiles.indexOf(group.file) === -1) return;
 
     importOne(ss, "sheets_data", group.file, group.tab);
-    importOne(ss, "sheets_data_calcs/period_pct", group.file, group.tab + " Period%");
-    importOne(ss, "sheets_data_calcs/yoy_pct", group.file, group.tab + " YoY%");
-    importOne(ss, "sheets_data_calcs/period_pp", group.file, group.tab + " Period pp");
-    importOne(ss, "sheets_data_calcs/yoy_pp", group.file, group.tab + " YoY pp");
+    importOne(ss, "sheets_data_calcs/period", group.file, group.tab + " Period%");
+    importOne(ss, "sheets_data_calcs/yoy", group.file, group.tab + " YoY%");
     updatedTabs.push(group.tab);
   });
 
@@ -102,10 +100,8 @@ function importAllGroups() {
 
   GROUPS.forEach(function (group) {
     importOne(ss, "sheets_data", group.file, group.tab);
-    importOne(ss, "sheets_data_calcs/period_pct", group.file, group.tab + " Period%");
-    importOne(ss, "sheets_data_calcs/yoy_pct", group.file, group.tab + " YoY%");
-    importOne(ss, "sheets_data_calcs/period_pp", group.file, group.tab + " Period pp");
-    importOne(ss, "sheets_data_calcs/yoy_pp", group.file, group.tab + " YoY pp");
+    importOne(ss, "sheets_data_calcs/period", group.file, group.tab + " Period%");
+    importOne(ss, "sheets_data_calcs/yoy", group.file, group.tab + " YoY%");
   });
 
   // Set the checkpoint so importUpdatedGroups knows where to start
@@ -127,15 +123,13 @@ function importValuesOnly() {
 }
 
 /**
- * Import only calculated series (period % and YoY %).
+ * Import only calculated series (period and YoY changes).
  */
 function importCalcsOnly() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   GROUPS.forEach(function (group) {
-    importOne(ss, "sheets_data_calcs/period_pct", group.file, group.tab + " Period%");
-    importOne(ss, "sheets_data_calcs/yoy_pct", group.file, group.tab + " YoY%");
-    importOne(ss, "sheets_data_calcs/period_pp", group.file, group.tab + " Period pp");
-    importOne(ss, "sheets_data_calcs/yoy_pp", group.file, group.tab + " YoY pp");
+    importOne(ss, "sheets_data_calcs/period", group.file, group.tab + " Period%");
+    importOne(ss, "sheets_data_calcs/yoy", group.file, group.tab + " YoY%");
   });
   logUpdate(ss, []);
 }
