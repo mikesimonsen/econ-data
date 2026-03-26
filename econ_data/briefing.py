@@ -263,10 +263,22 @@ def _linkify_series(text: str, name_to_sid: dict) -> str:
     import re
     # Sort by length descending so longer names match first
     for name, sid in sorted(name_to_sid.items(), key=lambda x: -len(x[0])):
-        # Case-insensitive match, whole word boundary
-        pattern = re.compile(re.escape(name), re.IGNORECASE)
-        replacement = f'<a href="#row-{sid}" class="series-link" onclick="scrollToSeries(\'{sid}\')">{name}</a>'
-        text = pattern.sub(replacement, text, count=1)  # only first occurrence per paragraph
+        # Only match text that isn't already inside an <a> tag
+        # Split on existing links, only search in non-link parts
+        parts = re.split(r'(<a [^>]*>.*?</a>)', text)
+        new_parts = []
+        replaced = False
+        for part in parts:
+            if part.startswith('<a ') or replaced:
+                new_parts.append(part)
+            else:
+                pattern = re.compile(re.escape(name), re.IGNORECASE)
+                if pattern.search(part):
+                    link = f'<a href="#row-{sid}" class="series-link" onclick="scrollToSeries(\'{sid}\')">{name}</a>'
+                    part = pattern.sub(link, part, count=1)
+                    replaced = True
+                new_parts.append(part)
+        text = "".join(new_parts)
     return text
 
 
