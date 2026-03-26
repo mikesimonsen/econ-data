@@ -173,7 +173,11 @@ if __name__ == "__main__":
         briefing_html = generate_briefing(cfg, updated_ids=updated_ids)
         briefing_path = summary_dir / f"briefing {today}.html"
         briefing_path.write_text(briefing_html)
-        log(f"Briefing saved to {briefing_path}")
+        # Also publish to docs/ for GitHub Pages
+        docs_dir = Path("docs")
+        docs_dir.mkdir(exist_ok=True)
+        (docs_dir / "index.html").write_text(briefing_html)
+        log(f"Briefing saved to {briefing_path} + docs/index.html")
     except Exception as e:
         log(f"Briefing generation failed: {e}")
 
@@ -193,7 +197,7 @@ if __name__ == "__main__":
 
         try:
             subprocess.run(
-                ["git", "add", "sheets_data/", "sheets_data_calcs/"],
+                ["git", "add", "sheets_data/", "sheets_data_calcs/", "docs/"],
                 cwd=Path(__file__).parent, check=True, capture_output=True,
             )
             subprocess.run(
