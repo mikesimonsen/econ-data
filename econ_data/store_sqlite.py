@@ -99,6 +99,73 @@ def save(observations: list, db_path: Path = DB_PATH) -> int:
     return count
 
 
+def backfill_captured_at(db_path: Path = DB_PATH) -> int:
+    """One-time backfill: set captured_at for latest observations missing it.
+
+    Parses historical signals files to find "UPDATED TODAY" sections,
+    which tell us exactly which series got new data on each date.
+    """
+    import re
+
+    con = _connect(db_path)
+
+    # Get series that are missing captured_at on their latest observation
+    missing = dict(con.execute("""
+        SELECT o.series_id, o.date
+        FROM observations o
+        INNER JOIN (
+            SELECT series_id, MAX(date) as max_date
+            FROM observations GROUP BY series_id
+        ) latest ON o.series_id = latest.series_id AND o.date = latest.max_date
+        WHERE o.captured_at IS NULL
+    """).fetchall())
+
+    if not missing:
+        con.close()
+        return 0
+
+    # Parse signals files to find when each series was in "UPDATED TODAY"
+    signals_dir = Path(__file__).parent.parent / "summaries"
+    series_release = {}  # {series_id: date_str}
+
+    for sig_file in sorted(signals_dir.glob("signals *.txt"), reverse=True):
+        # Extract date from filename: "signals 2026-03-18.txt"
+        match = re.search(r"signals (\d{4}-\d{2}-\d{2})", sig_file.name)
+        if not match:
+            continue
+        run_date = match.group(1)
+
+        text = sig_file.read_text()
+        # Only look at the "UPDATED TODAY" section
+        today_match = re.search(
+            r"UPDATED TODAY.*?(?=UPDATED THIS WEEK|$)", text, re.DOTALL
+        )
+        if not today_match:
+            continue
+
+        today_block = today_match.group()
+        # Find series IDs (16-char left-aligned identifiers)
+        for sid_match in re.finditer(r"^\s{4}(\S+)\s+\d{4}", today_block, re.MULTILINE):
+            sid = sid_match.group(1)
+            if sid in missing and sid not in series_release:
+                series_release[sid] = run_date
+
+    # Apply
+    count = 0
+    for sid, run_date in series_release.items():
+        obs_date = missing[sid]
+        con.execute(
+            "UPDATE observations SET captured_at = ? "
+            "WHERE series_id = ? AND date = ?",
+            (run_date + "T07:00:00", sid, obs_date),
+        )
+        count += 1
+
+    con.commit()
+    con.close()
+    return count
+
+
 def get_last_dates(db_path: Path = DB_PATH) -> dict:
     """Return {series_id: date} of the most recent observation for each series."""
     from datetime import date as date_type
