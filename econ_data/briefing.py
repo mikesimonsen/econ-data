@@ -32,7 +32,7 @@ def _sparkline_data(series_id: str, n: int = 24,
 
 def _sparkline_svg(points: list, width: int = 120, height: int = 28,
                    color: str = "#4A90D9") -> str:
-    """Render a list of (date, value) as an inline SVG sparkline."""
+    """Render a list of (date, value) as an inline SVG sparkline with hover tooltips."""
     if len(points) < 2:
         return ""
     values = [p[1] for p in points]
@@ -44,17 +44,36 @@ def _sparkline_svg(points: list, width: int = 120, height: int = 28,
     for i, v in enumerate(values):
         x = pad + (width - 2 * pad) * i / (len(values) - 1)
         y = pad + (height - 2 * pad) * (1 - (v - vmin) / vrange)
-        coords.append(f"{x:.1f},{y:.1f}")
+        coords.append((f"{x:.1f}", f"{y:.1f}"))
 
-    polyline = " ".join(coords)
-    # Dot on the last point
-    lx, ly = coords[-1].split(",")
+    polyline = " ".join(f"{x},{y}" for x, y in coords)
+
+    # Hover circles with tooltips at each point
+    circles = []
+    for i, (x, y) in enumerate(coords):
+        d, v = points[i]
+        label = d[:7] if len(d) > 7 else d  # YYYY-MM for monthly
+        if abs(v) >= 1000:
+            fmt_v = f"{v:,.0f}"
+        elif abs(v) >= 10:
+            fmt_v = f"{v:.1f}"
+        else:
+            fmt_v = f"{v:.2f}"
+        circles.append(
+            f'<circle cx="{x}" cy="{y}" r="4" fill="transparent" '
+            f'stroke="none" class="spark-hover">'
+            f'<title>{label}: {fmt_v}</title></circle>'
+        )
+
+    # Visible dot on the last point
+    lx, ly = coords[-1]
     return (
         f'<svg width="{width}" height="{height}" style="vertical-align:middle">'
         f'<polyline points="{polyline}" fill="none" stroke="{color}" '
         f'stroke-width="1.5" stroke-linejoin="round"/>'
         f'<circle cx="{lx}" cy="{ly}" r="2" fill="{color}"/>'
-        f'</svg>'
+        + "".join(circles)
+        + f'</svg>'
     )
 
 
@@ -662,6 +681,7 @@ main { padding: 24px 32px; max-width: 1400px; }
 .series-name { font-weight: 500; }
 .series-id { font-size: 11px; color: var(--text-muted); font-family: monospace; }
 .spark-col { width: 130px; }
+.spark-hover:hover { fill: var(--accent); stroke: var(--accent); stroke-width: 1; r: 3; }
 .date-col { width: 90px; color: var(--text-muted); font-family: monospace; font-size: 12px; }
 .val-col { text-align: right; font-family: monospace; width: 100px; }
 .chg-col { text-align: right; font-family: monospace; width: 100px; }
