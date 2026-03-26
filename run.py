@@ -195,23 +195,26 @@ if __name__ == "__main__":
         write_manifest(changed_groups)
         log(f"Exported {len(paths)} value CSVs + {len(calc_paths)} calc CSVs ({len(changed_groups)} groups changed)")
 
-        try:
-            subprocess.run(
-                ["git", "add", "sheets_data/", "sheets_data_calcs/", "docs/"],
-                cwd=Path(__file__).parent, check=True, capture_output=True,
-            )
-            subprocess.run(
-                ["git", "commit", "-m", f"data: update sheets export {today}"],
-                cwd=Path(__file__).parent, check=True, capture_output=True,
-            )
-            subprocess.run(
-                ["git", "push"],
-                cwd=Path(__file__).parent, check=True, capture_output=True,
-            )
-            log("Pushed sheets_data/ to GitHub.")
-        except subprocess.CalledProcessError as e:
+    # Always push docs/ (briefing) + sheets if changed
+    try:
+        subprocess.run(
+            ["git", "add", "sheets_data/", "sheets_data_calcs/", "docs/"],
+            cwd=Path(__file__).parent, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", f"data: update sheets export {today}"],
+            cwd=Path(__file__).parent, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "push"],
+            cwd=Path(__file__).parent, check=True, capture_output=True,
+        )
+        log("Pushed to GitHub.")
+    except subprocess.CalledProcessError as e:
+        # No changes to commit is fine (exit code 1 from git commit)
+        if "nothing to commit" not in (e.stdout or b"").decode():
             log(f"Git push failed: {e.stderr.decode().strip() if e.stderr else e}")
-        except FileNotFoundError:
-            log("Git not available — skipping push.")
+    except FileNotFoundError:
+        log("Git not available — skipping push.")
 
     log("Done.")
