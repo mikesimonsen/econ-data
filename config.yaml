@@ -322,6 +322,21 @@ groups:
       - id: HNFSEPUSSA
         name: "New Houses For Sale (SAAR)"
 
+  households:
+    name: "Households & Homeownership (Census HVS, Quarterly)"
+    series:
+      - id: EOCCUSQ176N
+        name: "Total Occupied Housing Units (000s)"
+      - id: EOWNOCCUSQ176N
+        name: "Owner-Occupied Housing Units (000s)"
+      - id: ERNTOCCUSQ176N
+        name: "Renter-Occupied Housing Units (000s)"
+      - id: ETOTALUSQ176N
+        name: "Total Housing Units (000s)"
+      - id: RHORUSQ156N
+        name: "Homeownership Rate"
+        units: percent
+
   construction-spending:
     name: "Construction Spending (Census)"
     series:
