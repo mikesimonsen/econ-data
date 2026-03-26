@@ -102,6 +102,8 @@ def _format_change(val, is_pct=False):
 def _signal_class(signal: str) -> str:
     """Map a signal string to a CSS class."""
     s = signal.lower()
+    if "outlier" in s:
+        return "signal-outlier"
     if "reversal" in s:
         return "signal-reversal"
     if "unusual" in s:
@@ -913,6 +915,7 @@ main { padding: 24px 32px; max-width: 1400px; }
 .signal-unusual { background: rgba(248, 81, 73, 0.2); color: var(--red); }
 .signal-accel { background: rgba(88, 166, 255, 0.2); color: var(--blue); }
 .signal-turn { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+.signal-outlier { background: rgba(188, 76, 255, 0.2); color: #bc4cff; }
 .signal-info { background: rgba(139, 148, 158, 0.15); color: var(--text-muted); }
 
 .detail-row td {

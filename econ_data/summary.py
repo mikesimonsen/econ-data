@@ -195,6 +195,64 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
     }
 
 
+OUTLIER_MIN_GROUP = 4    # need at least this many series with data
+OUTLIER_CONSENSUS = 0.75  # fraction that must agree for a "consensus"
+
+
+def _detect_group_outliers(analyses: list):
+    """Detect series that diverge from the group consensus. Mutates analyses in place.
+
+    Checks both period change direction and YoY direction. If a supermajority
+    of series in the group are moving one way, flags any going the other way.
+    """
+    # Filter to series with data
+    with_data = [a for a in analyses if a.get("period_pct") is not None]
+    if len(with_data) < OUTLIER_MIN_GROUP:
+        return
+
+    # --- Period direction outliers ---
+    _check_direction_outliers(with_data, "period_pct", "period")
+
+    # --- YoY direction outliers ---
+    with_yoy = [a for a in analyses if a.get("yoy_pct") is not None]
+    if len(with_yoy) >= OUTLIER_MIN_GROUP:
+        _check_direction_outliers(with_yoy, "yoy_pct", "YoY")
+
+
+def _check_direction_outliers(analyses: list, field: str, label: str):
+    """Check if a few series diverge from the group's consensus direction."""
+    positive = [a for a in analyses if a[field] > 0]
+    negative = [a for a in analyses if a[field] < 0]
+    total = len(positive) + len(negative)  # exclude zeros
+
+    if total < OUTLIER_MIN_GROUP:
+        return
+
+    pos_frac = len(positive) / total
+    neg_frac = len(negative) / total
+
+    if pos_frac >= OUTLIER_CONSENSUS and negative:
+        # Consensus is positive, flag the negatives
+        majority_word = "rising" if label == "period" else "positive"
+        for a in negative:
+            val = a[field]
+            is_pct = a.get("is_percent", False)
+            unit = "pp" if is_pct else "%"
+            a["signals"].append(
+                f"Group outlier: {label} {val:+.2f}{unit} while most peers are {majority_word}"
+            )
+    elif neg_frac >= OUTLIER_CONSENSUS and positive:
+        # Consensus is negative, flag the positives
+        majority_word = "falling" if label == "period" else "negative"
+        for a in positive:
+            val = a[field]
+            is_pct = a.get("is_percent", False)
+            unit = "pp" if is_pct else "%"
+            a["signals"].append(
+                f"Group outlier: {label} {val:+.2f}{unit} while most peers are {majority_word}"
+            )
+
+
 def generate_summary(cfg: dict, db_path: Path = DB_PATH) -> dict:
     """
     Analyze all series in the config and return a structured summary.
@@ -220,6 +278,7 @@ def generate_summary(cfg: dict, db_path: Path = DB_PATH) -> dict:
         analyses = []
         for s in gdata["series"]:
             analyses.append(analyze_series(s["id"], s["name"], db_path))
+        _detect_group_outliers(analyses)
         result_groups[gid] = {"name": gdata["name"], "series": analyses}
 
     return {"standalone": result_standalone, "groups": result_groups}
