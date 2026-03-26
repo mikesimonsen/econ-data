@@ -36,6 +36,7 @@ groups:
   cpi-metro:
     name: "CPI by Metro Area (BLS)"
     series:
+      # --- Available via FRED ---
       - id: CUURA101SA0
         name: "CPI - New York"
       - id: CUURA102SA0
@@ -60,6 +61,52 @@ groups:
         name: "CPI - Seattle"
       - id: CUURA400SA0
         name: "CPI - West Region (Size Class A)"
+      # --- BLS only (discontinued in FRED after 2018 geo restructuring) ---
+      - id: BLS_CPI_LA
+        name: "CPI - Los Angeles"
+        bls_id: CUURS49ASA0
+      - id: BLS_CPI_DENVER
+        name: "CPI - Denver"
+        bls_id: CUURS12ASA0
+      - id: BLS_CPI_MINNEAPOLIS
+        name: "CPI - Minneapolis"
+        bls_id: CUURS23ASA0
+      - id: BLS_CPI_MILWAUKEE
+        name: "CPI - Milwaukee"
+        bls_id: CUURS23BSA0
+      - id: BLS_CPI_CINCINNATI
+        name: "CPI - Cincinnati"
+        bls_id: CUURS24ASA0
+      - id: BLS_CPI_STLOUIS
+        name: "CPI - St. Louis"
+        bls_id: CUURS24BSA0
+      - id: BLS_CPI_DC
+        name: "CPI - Washington DC"
+        bls_id: CUURS35ASA0
+      - id: BLS_CPI_BALTIMORE
+        name: "CPI - Baltimore"
+        bls_id: CUURS35BSA0
+      - id: BLS_CPI_TAMPA
+        name: "CPI - Tampa"
+        bls_id: CUURS35DSA0
+      - id: BLS_CPI_PHOENIX
+        name: "CPI - Phoenix"
+        bls_id: CUURS48BSA0
+      - id: BLS_CPI_SANDIEGO
+        name: "CPI - San Diego"
+        bls_id: CUURS49DSA0
+      - id: BLS_CPI_PORTLAND
+        name: "CPI - Portland"
+        bls_id: CUURS49ESA0
+      - id: BLS_CPI_RIVERSIDE
+        name: "CPI - Riverside"
+        bls_id: CUURS49FSA0
+      - id: BLS_CPI_HAWAII
+        name: "CPI - Urban Hawaii"
+        bls_id: CUURS12BSA0
+      - id: BLS_CPI_ALASKA
+        name: "CPI - Urban Alaska"
+        bls_id: CUURS48ASA0
 
   pce:
     name: "PCE Price Index (Fed's Preferred Inflation Measure)"

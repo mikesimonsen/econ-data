@@ -5,6 +5,7 @@ from pathlib import Path
 from econ_data.calculations import compute_all
 from econ_data.config import load, all_series, fred_series
 from econ_data.fetch import fetch_all
+from econ_data.fetch_bls import fetch_bls, build_series_map
 from econ_data.fetch_mnd import fetch_mnd
 from econ_data.store_sqlite import (
     get_last_dates, get_fetch_log, save, save_fetch_log, save_groups,
@@ -76,6 +77,15 @@ if __name__ == "__main__":
 
     if mnd_result["new"]:
         save(mnd_result["new"])
+
+    # Fetch BLS series (metro CPI not available in FRED)
+    bls_map = build_series_map(cfg)
+    if bls_map:
+        bls_result = fetch_bls(bls_map, last_dates=last_dates)
+        result["new"].extend(bls_result["new"])
+        result["counts"].update(bls_result["counts"])
+        if bls_result["new"]:
+            save(bls_result["new"])
 
     counts = result["counts"]
 

@@ -33,9 +33,11 @@ def percent_series(cfg: dict) -> set:
 
 def fred_series(cfg: dict) -> list:
     """Return (series_id, name) pairs for FRED-sourced series only."""
-    result = [(s["id"], s["name"]) for s in cfg.get("series", [])]
+    result = [(s["id"], s["name"]) for s in cfg.get("series", [])
+              if not s.get("bls_id")]
     for group in cfg.get("groups", {}).values():
         if group.get("source"):
             continue  # skip non-FRED groups (e.g. source: mnd)
-        result.extend((s["id"], s["name"]) for s in group["series"])
+        result.extend((s["id"], s["name"]) for s in group["series"]
+                       if not s.get("bls_id"))
     return result
