@@ -11,6 +11,7 @@ from econ_data.store_sqlite import (
     get_last_dates, get_fetch_log, save, save_fetch_log, save_groups,
     detect_and_save_revisions, get_recent_revisions,
 )
+from econ_data.briefing import generate_briefing
 from econ_data.daily_analysis import generate_daily_analysis
 from econ_data.export_sheets import export_all_groups, export_all_groups_calcs, write_manifest
 from econ_data.summary import generate_summary, format_summary, format_signals_by_recency
@@ -165,6 +166,16 @@ if __name__ == "__main__":
         log(f"Daily analysis saved to {analysis_path}")
     except Exception as e:
         log(f"Daily analysis failed: {e}")
+
+    # Editorial briefing (HTML)
+    log("Generating editorial briefing...")
+    try:
+        briefing_html = generate_briefing(cfg, updated_ids=updated_ids)
+        briefing_path = summary_dir / f"briefing {today}.html"
+        briefing_path.write_text(briefing_html)
+        log(f"Briefing saved to {briefing_path}")
+    except Exception as e:
+        log(f"Briefing generation failed: {e}")
 
     # ── Export and push to GitHub when new data arrived ────────────
     has_changes = new_obs or revisions
