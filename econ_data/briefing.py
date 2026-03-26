@@ -279,11 +279,11 @@ def _build_name_map(summary: dict) -> dict:
             name = a["name"]
             # Full name
             name_to_sid[name] = sid
-            # Common short names people use in prose
-            # Strip prefixes like "CPI ", "CPI - "
-            for prefix in ["CPI ", "CPI - ", "CPI-U "]:
+            # Short names — but not bare city names (ambiguous with Case-Shiller)
+            # Keep "CPI" in the alias so "Dallas CPI" doesn't match Case-Shiller Dallas
+            for prefix in ["CPI All Items (", "CPI Less Food & Energy ("]:
                 if name.startswith(prefix):
-                    short = name[len(prefix):]
+                    short = name[len(prefix):].rstrip(")")
                     if len(short) > 4:
                         name_to_sid[short] = sid
     # Add well-known aliases
@@ -308,6 +308,31 @@ def _build_name_map(summary: dict) -> dict:
         "shelter CPI": "CUSR0000SAH1", "CPI shelter": "CUSR0000SAH1",
         "food CPI": "CPIFABSL",
         "apparel": "CPIAPPSL",
+        "Chicago CPI": "CUURA207SA0",
+        "Detroit CPI": "CUURA208SA0",
+        "Dallas CPI": "CUURA316SA0",
+        "Houston CPI": "CUURA318SA0",
+        "Atlanta CPI": "CUURA319SA0",
+        "Miami CPI": "CUURA320SA0",
+        "San Francisco CPI": "CUURA422SA0",
+        "Seattle CPI": "CUURA423SA0",
+        "New York CPI": "CUURA101SA0",
+        "Philadelphia CPI": "CUURA102SA0",
+        "Boston CPI": "CUURA103SA0",
+        "Los Angeles CPI": "BLS_CPI_LA", "LA CPI": "BLS_CPI_LA",
+        "Los Angeles-area": "BLS_CPI_LA",
+        "Denver CPI": "BLS_CPI_DENVER",
+        "Minneapolis CPI": "BLS_CPI_MINNEAPOLIS",
+        "Phoenix CPI": "BLS_CPI_PHOENIX",
+        "San Diego CPI": "BLS_CPI_SANDIEGO",
+        "Portland CPI": "BLS_CPI_PORTLAND",
+        "Baltimore CPI": "BLS_CPI_BALTIMORE",
+        "Tampa CPI": "BLS_CPI_TAMPA",
+        "Washington CPI": "BLS_CPI_DC", "DC CPI": "BLS_CPI_DC",
+        "St. Louis CPI": "BLS_CPI_STLOUIS",
+        "Milwaukee CPI": "BLS_CPI_MILWAUKEE",
+        "Cincinnati CPI": "BLS_CPI_CINCINNATI",
+        "Riverside CPI": "BLS_CPI_RIVERSIDE",
         "jumbo mortgage": "MND_30YR_JUMBO",
         "30-year fixed": "MND_30YR_FIXED", "30-year mortgage": "MND_30YR_FIXED",
         "median duration": "UEMPMED",
