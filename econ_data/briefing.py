@@ -218,6 +218,43 @@ def _release_dates(db_path: Path = DB_PATH) -> dict:
     return {sid: ts for sid, ts in rows}
 
 
+def _load_analysis(today: str) -> str:
+    """Load today's LLM daily analysis markdown, returning just the narrative."""
+    analysis_path = Path(__file__).parent.parent / "summaries" / f"daily analysis {today}.md"
+    if not analysis_path.exists():
+        return ""
+    text = analysis_path.read_text()
+    # Strip the title line and the appended raw Signals/Summary sections
+    parts = text.split("\n---\n", 1)
+    narrative = parts[0]
+    # Remove the leading "# Daily Analysis — date" line
+    lines = narrative.split("\n")
+    if lines and lines[0].startswith("# "):
+        lines = lines[1:]
+    return "\n".join(lines).strip()
+
+
+def _md_to_html(md: str) -> str:
+    """Minimal markdown→HTML for the analysis (headers, paragraphs, bold, italic)."""
+    html_lines = []
+    for line in md.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            html_lines.append("")
+            continue
+        if stripped.startswith("## "):
+            html_lines.append(f'<h3 class="analysis-h">{stripped[3:]}</h3>')
+        elif stripped.startswith("# "):
+            html_lines.append(f'<h2 class="analysis-h">{stripped[2:]}</h2>')
+        else:
+            # Bold and italic
+            import re
+            s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', stripped)
+            s = re.sub(r'\*(.+?)\*', r'<em>\1</em>', s)
+            html_lines.append(f'<p class="analysis-p">{s}</p>')
+    return "\n".join(html_lines)
+
+
 def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
                       updated_ids: set = None) -> str:
     """Generate the full HTML briefing. Returns HTML string."""
@@ -252,9 +289,11 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
         group_csvs[gid] = _group_csv(gid, gdata["series"], db_path)
 
     release_ts = _release_dates(db_path)
+    analysis_md = _load_analysis(today)
 
     html = _render_page(
         today=today,
+        analysis_html=_md_to_html(analysis_md) if analysis_md else "",
         signal_series=signal_series,
         quiet_series=quiet_series,
         revisions=revisions,
@@ -273,6 +312,7 @@ def _render_page(**ctx) -> str:
     today = ctx["today"]
 
     # Build sections
+    analysis_html = ctx.get("analysis_html", "")
     signals_html = _render_signals(ctx)
     revisions_html = _render_revisions(ctx["revisions"])
     all_groups_html = _render_all_groups(ctx)
@@ -304,6 +344,7 @@ def _render_page(**ctx) -> str:
 
 <main>
   <section id="signals" class="tab-content active">
+    {f'<div class="analysis-block">{analysis_html}</div>' if analysis_html else ''}
     {signals_html}
   </section>
 
@@ -630,6 +671,31 @@ main { padding: 24px 32px; max-width: 1400px; }
 
 .tab-content { display: none; }
 .tab-content.active { display: block; }
+
+.analysis-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 24px;
+  margin-bottom: 32px;
+  line-height: 1.7;
+}
+.analysis-h {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 20px 0 8px;
+}
+.analysis-h:first-child { margin-top: 0; }
+.analysis-p {
+  font-size: 14px;
+  color: var(--text);
+  margin: 0 0 10px;
+}
+.analysis-p em {
+  color: var(--text-muted);
+  font-size: 12px;
+}
 
 .group-block {
   margin-bottom: 32px;
