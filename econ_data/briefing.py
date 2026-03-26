@@ -10,7 +10,7 @@ import csv
 import io
 import json
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from econ_data.store_sqlite import DB_PATH, get_recent_revisions
@@ -94,6 +94,20 @@ def _signal_class(signal: str) -> str:
     return "signal-info"
 
 
+def _format_release(ts: str) -> str:
+    """Format a captured_at timestamp like '2026-03-26T08:58:24' for display."""
+    if not ts:
+        return ""
+    # Show as 'Mar 26 8:58a'
+    try:
+        dt = datetime.fromisoformat(ts)
+        ampm = "a" if dt.hour < 12 else "p"
+        hour = dt.hour % 12 or 12
+        return dt.strftime(f"%b %-d") + f" {hour}:{dt.minute:02d}{ampm}"
+    except (ValueError, TypeError):
+        return ts[:10]
+
+
 def _trend_arrow(a: dict) -> str:
     if a["period_pct"] is None:
         return ""
@@ -169,6 +183,22 @@ def _group_csv(group_id: str, series_list: list,
     return buf.getvalue()
 
 
+def _release_dates(db_path: Path = DB_PATH) -> dict:
+    """Return {series_id: captured_at} for the latest observation of each series."""
+    con = sqlite3.connect(db_path)
+    rows = con.execute("""
+        SELECT o.series_id, o.captured_at
+        FROM observations o
+        INNER JOIN (
+            SELECT series_id, MAX(date) as max_date
+            FROM observations GROUP BY series_id
+        ) latest ON o.series_id = latest.series_id AND o.date = latest.max_date
+        WHERE o.captured_at IS NOT NULL
+    """).fetchall()
+    con.close()
+    return {sid: ts for sid, ts in rows}
+
+
 def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
                       updated_ids: set = None) -> str:
     """Generate the full HTML briefing. Returns HTML string."""
@@ -202,11 +232,14 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
     for gid, gdata in summary.get("groups", {}).items():
         group_csvs[gid] = _group_csv(gid, gdata["series"], db_path)
 
+    release_ts = _release_dates(db_path)
+
     html = _render_page(
         today=today,
         signal_series=signal_series,
         quiet_series=quiet_series,
         revisions=revisions,
+        release_dates=release_ts,
         sparklines=sparklines,
         summary=summary,
         csv_data=csv_data,
@@ -284,6 +317,7 @@ def _render_signals(ctx) -> str:
     signal_series = ctx["signal_series"]
     sparklines = ctx["sparklines"]
     updated_ids = ctx["updated_ids"]
+    release_dates = ctx.get("release_dates", {})
 
     if not signal_series:
         return "<p class='muted'>No signals today.</p>"
@@ -302,6 +336,7 @@ def _render_signals(ctx) -> str:
             is_pct = a.get("is_percent", False)
             fresh = "fresh" if sid in updated_ids else ""
             spark = _sparkline_svg(sparklines.get(sid, []))
+            released = _format_release(release_dates.get(sid, ""))
 
             signal_tags = " ".join(
                 f'<span class="signal-tag {_signal_class(s)}">{s}</span>'
@@ -322,11 +357,12 @@ def _render_signals(ctx) -> str:
               <td class="val-col">{_format_val(a['latest_value'], is_pct)}</td>
               <td class="chg-col">{_trend_arrow(a)} {_format_change(a['period_pct'], is_pct)}</td>
               <td class="chg-col">{_format_change(a['yoy_pct'], is_pct)}</td>
+              <td class="release-col">{released}</td>
               <td class="signal-col">{signal_tags}</td>
               <td class="export-col"><button class="btn-export" onclick="event.stopPropagation(); downloadCsv('{sid}')">CSV</button></td>
             </tr>
             <tr class="detail-row" id="detail-{sid}" style="display:none">
-              <td colspan="8">
+              <td colspan="9">
                 <div class="detail-content" id="detail-content-{sid}">Loading...</div>
               </td>
             </tr>""")
@@ -346,6 +382,7 @@ def _render_signals(ctx) -> str:
                 <th class="val-col">Value</th>
                 <th class="chg-col">Period</th>
                 <th class="chg-col">YoY</th>
+                <th class="release-col">Released</th>
                 <th class="signal-col">Signals</th>
                 <th class="export-col"></th>
               </tr>
@@ -362,6 +399,7 @@ def _render_all_groups(ctx) -> str:
     summary = ctx["summary"]
     sparklines = ctx["sparklines"]
     updated_ids = ctx["updated_ids"]
+    release_dates = ctx.get("release_dates", {})
 
     parts = []
     for gid, gdata in summary.get("groups", {}).items():
@@ -371,6 +409,7 @@ def _render_all_groups(ctx) -> str:
             is_pct = a.get("is_percent", False)
             fresh = "fresh" if sid in updated_ids else ""
             spark = _sparkline_svg(sparklines.get(sid, []))
+            released = _format_release(release_dates.get(sid, ""))
 
             signal_tags = ""
             if a["signals"]:
@@ -398,11 +437,12 @@ def _render_all_groups(ctx) -> str:
               <td class="val-col">{_format_val(a['latest_value'], is_pct)}</td>
               <td class="chg-col">{_trend_arrow(a)} {_format_change(a['period_pct'], is_pct)}</td>
               <td class="chg-col">{_format_change(a['yoy_pct'], is_pct)}</td>
+              <td class="release-col">{released}</td>
               <td class="signal-col">{signal_tags} {trend}</td>
               <td class="export-col"><button class="btn-export" onclick="event.stopPropagation(); downloadCsv('{sid}')">CSV</button></td>
             </tr>
             <tr class="detail-row" id="detail-{sid}" style="display:none">
-              <td colspan="8">
+              <td colspan="9">
                 <div class="detail-content" id="detail-content-{sid}">Loading...</div>
               </td>
             </tr>""")
@@ -422,6 +462,7 @@ def _render_all_groups(ctx) -> str:
                 <th class="val-col">Value</th>
                 <th class="chg-col">Period</th>
                 <th class="chg-col">YoY</th>
+                <th class="release-col">Released</th>
                 <th class="signal-col">Signals</th>
                 <th class="export-col"></th>
               </tr>
@@ -592,6 +633,7 @@ main { padding: 24px 32px; max-width: 1400px; }
 .date-col { width: 90px; color: var(--text-muted); font-family: monospace; font-size: 12px; }
 .val-col { text-align: right; font-family: monospace; width: 100px; }
 .chg-col { text-align: right; font-family: monospace; width: 100px; }
+.release-col { width: 100px; color: var(--text-muted); font-size: 11px; white-space: nowrap; }
 .signal-col { min-width: 160px; }
 .export-col { width: 50px; text-align: center; }
 

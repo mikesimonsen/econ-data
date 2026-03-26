@@ -60,19 +60,43 @@ def _migrate(con: sqlite3.Connection):
 
 
 def save(observations: list, db_path: Path = DB_PATH) -> int:
-    """Upsert observations with capture timestamp. Returns number of rows inserted/replaced."""
+    """Upsert observations. Only sets captured_at on new rows or changed values."""
     from datetime import datetime
     now = datetime.now().isoformat(timespec="seconds")
     con = _connect(db_path)
-    rows = [(o.series_id, o.name, o.date.isoformat(), o.value, now) for o in observations]
-    cur = con.executemany(
-        "INSERT OR REPLACE INTO observations (series_id, name, date, value, captured_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        rows,
-    )
+    count = 0
+    for o in observations:
+        date_str = o.date.isoformat()
+        existing = con.execute(
+            "SELECT value, captured_at FROM observations WHERE series_id = ? AND date = ?",
+            (o.series_id, date_str),
+        ).fetchone()
+
+        if existing is None:
+            # New observation — set captured_at
+            con.execute(
+                "INSERT INTO observations (series_id, name, date, value, captured_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (o.series_id, o.name, date_str, o.value, now),
+            )
+            count += 1
+        elif existing[0] != o.value:
+            # Value changed (revision) — update captured_at
+            con.execute(
+                "UPDATE observations SET name = ?, value = ?, captured_at = ? "
+                "WHERE series_id = ? AND date = ?",
+                (o.name, o.value, now, o.series_id, date_str),
+            )
+            count += 1
+        else:
+            # Same value — update name only, preserve captured_at
+            con.execute(
+                "UPDATE observations SET name = ? WHERE series_id = ? AND date = ?",
+                (o.name, o.series_id, date_str),
+            )
     con.commit()
     con.close()
-    return cur.rowcount
+    return count
 
 
 def get_last_dates(db_path: Path = DB_PATH) -> dict:
