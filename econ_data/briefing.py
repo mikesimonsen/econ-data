@@ -234,8 +234,10 @@ def _load_analysis(today: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _md_to_html(md: str) -> str:
-    """Minimal markdown→HTML for the analysis (headers, paragraphs, bold, italic)."""
+def _md_to_html(md: str, name_to_sid: dict = None) -> str:
+    """Minimal markdown→HTML for the analysis. Links series names to their rows."""
+    import re
+
     html_lines = []
     for line in md.split("\n"):
         stripped = line.strip()
@@ -247,12 +249,78 @@ def _md_to_html(md: str) -> str:
         elif stripped.startswith("# "):
             html_lines.append(f'<h2 class="analysis-h">{stripped[2:]}</h2>')
         else:
-            # Bold and italic
-            import re
             s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', stripped)
             s = re.sub(r'\*(.+?)\*', r'<em>\1</em>', s)
+            # Link series names/keywords to their rows
+            if name_to_sid:
+                s = _linkify_series(s, name_to_sid)
             html_lines.append(f'<p class="analysis-p">{s}</p>')
     return "\n".join(html_lines)
+
+
+def _linkify_series(text: str, name_to_sid: dict) -> str:
+    """Replace series name mentions with anchor links to their rows."""
+    import re
+    # Sort by length descending so longer names match first
+    for name, sid in sorted(name_to_sid.items(), key=lambda x: -len(x[0])):
+        # Case-insensitive match, whole word boundary
+        pattern = re.compile(re.escape(name), re.IGNORECASE)
+        replacement = f'<a href="#row-{sid}" class="series-link" onclick="scrollToSeries(\'{sid}\')">{name}</a>'
+        text = pattern.sub(replacement, text, count=1)  # only first occurrence per paragraph
+    return text
+
+
+def _build_name_map(summary: dict) -> dict:
+    """Build a map of recognizable names/keywords → series_id for linking."""
+    name_to_sid = {}
+    for gdata in summary.get("groups", {}).values():
+        for a in gdata["series"]:
+            sid = a["series_id"]
+            name = a["name"]
+            # Full name
+            name_to_sid[name] = sid
+            # Common short names people use in prose
+            # Strip prefixes like "CPI ", "CPI - "
+            for prefix in ["CPI ", "CPI - ", "CPI-U "]:
+                if name.startswith(prefix):
+                    short = name[len(prefix):]
+                    if len(short) > 4:
+                        name_to_sid[short] = sid
+    # Add well-known aliases
+    aliases = {
+        "unemployment rate": "UNRATE", "jobless rate": "UNRATE",
+        "nonfarm payrolls": "PAYEMS", "payrolls": "PAYEMS",
+        "initial claims": "ICSA", "continuing claims": "CCSA",
+        "core CPI": "CPILFESL", "headline CPI": "CPIAUCSL",
+        "core PCE": "PCEPILFE",
+        "housing starts": "HOUST", "building permits": "PERMIT",
+        "existing home sales": "EXHOSLUSM495S",
+        "new home sales": "HSN1F", "new single-family homes": "HSN1F",
+        "median sales price": "HOSMEDUSM052N",
+        "months supply": "MSACSR", "months' supply": "MSACSR",
+        "homeownership rate": "RHORUSQ156N",
+        "Case-Shiller": "CSUSHPISA", "Case Shiller": "CSUSHPISA",
+        "10-year Treasury": "DGS10", "10-year yield": "DGS10",
+        "labor force participation": "CIVPART",
+        "job openings": "JTSJOL", "quits": "JTSQUL",
+        "construction spending": "TLRESCONS",
+        "Energy CPI": "CPIENGSL", "CPI energy": "CPIENGSL",
+        "shelter CPI": "CUSR0000SAH1", "CPI shelter": "CUSR0000SAH1",
+        "food CPI": "CPIFABSL",
+        "apparel": "CPIAPPSL",
+        "jumbo mortgage": "MND_30YR_JUMBO",
+        "30-year fixed": "MND_30YR_FIXED", "30-year mortgage": "MND_30YR_FIXED",
+        "median duration": "UEMPMED",
+        "long-term joblessness": "UEMP27OV", "27+ weeks": "UEMP27OV",
+    }
+    name_to_sid.update(aliases)
+    return name_to_sid
+
+
+def _group_max_date(series_list: list) -> str:
+    """Return the most recent latest_date across a list of series analyses."""
+    dates = [a["latest_date"] for a in series_list if a.get("latest_date")]
+    return max(dates) if dates else ""
 
 
 def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
@@ -290,10 +358,11 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
 
     release_ts = _release_dates(db_path)
     analysis_md = _load_analysis(today)
+    name_map = _build_name_map(summary)
 
     html = _render_page(
         today=today,
-        analysis_html=_md_to_html(analysis_md) if analysis_md else "",
+        analysis_html=_md_to_html(analysis_md, name_map) if analysis_md else "",
         signal_series=signal_series,
         quiet_series=quiet_series,
         revisions=revisions,
@@ -373,7 +442,7 @@ def _badge(n: int) -> str:
 
 
 def _render_signals(ctx) -> str:
-    """Render the What's Moving section."""
+    """Render the What's Moving section, sorted by most recent data first."""
     signal_series = ctx["signal_series"]
     sparklines = ctx["sparklines"]
     updated_ids = ctx["updated_ids"]
@@ -388,8 +457,15 @@ def _render_signals(ctx) -> str:
         by_group.setdefault(gid, {"name": gname, "series": []})
         by_group[gid]["series"].append(a)
 
+    # Sort groups by most recent data (newest first)
+    sorted_groups = sorted(
+        by_group.items(),
+        key=lambda item: _group_max_date(item[1]["series"]),
+        reverse=True,
+    )
+
     parts = []
-    for gid, gdata in by_group.items():
+    for gid, gdata in sorted_groups:
         rows = []
         for a in gdata["series"]:
             sid = a["series_id"]
@@ -407,7 +483,7 @@ def _render_signals(ctx) -> str:
             date_str = a["latest_date"] if freq == "daily" else a["latest_date"][:7]
 
             rows.append(f"""
-            <tr class="series-row {fresh}" onclick="toggleDetail('{sid}')">
+            <tr class="series-row {fresh}" id="row-{sid}" onclick="toggleDetail('{sid}')">
               <td class="name-col">
                 <div class="series-name">{a['name']}</div>
                 <div class="series-id">{sid}</div>
@@ -461,8 +537,15 @@ def _render_all_groups(ctx) -> str:
     updated_ids = ctx["updated_ids"]
     release_dates = ctx.get("release_dates", {})
 
+    # Sort groups by most recent data (newest first)
+    sorted_groups = sorted(
+        summary.get("groups", {}).items(),
+        key=lambda item: _group_max_date(item[1]["series"]),
+        reverse=True,
+    )
+
     parts = []
-    for gid, gdata in summary.get("groups", {}).items():
+    for gid, gdata in sorted_groups:
         rows = []
         for a in gdata["series"]:
             sid = a["series_id"]
@@ -487,7 +570,7 @@ def _render_all_groups(ctx) -> str:
                 trend = f'<span class="trend">{a["trend_dir"]} {a["trend_periods"]}{unit}</span>'
 
             rows.append(f"""
-            <tr class="series-row {fresh}" onclick="toggleDetail('{sid}')">
+            <tr class="series-row {fresh}" id="row-{sid}" onclick="toggleDetail('{sid}')">
               <td class="name-col">
                 <div class="series-name">{a['name']}</div>
                 <div class="series-id">{sid}</div>
@@ -696,6 +779,21 @@ main { padding: 24px 32px; max-width: 1400px; }
   color: var(--text-muted);
   font-size: 12px;
 }
+.series-link {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--accent);
+  cursor: pointer;
+}
+.series-link:hover { border-bottom-style: solid; }
+
+@keyframes highlight-row {
+  0% { background: rgba(88, 166, 255, 0.25); }
+  100% { background: transparent; }
+}
+.series-row.highlighted {
+  animation: highlight-row 2s ease-out;
+}
 
 .group-block {
   margin-bottom: 32px;
@@ -827,6 +925,26 @@ main { padding: 24px 32px; max-width: 1400px; }
 
 def _js() -> str:
     return """
+function scrollToSeries(sid) {
+  // Switch to the signals tab first (the row might be there)
+  var row = document.getElementById('row-' + sid);
+  if (!row) return;
+
+  // If the row is in a hidden tab, switch to the right tab
+  var section = row.closest('.tab-content');
+  if (section && !section.classList.contains('active')) {
+    // Find which tab to activate
+    var tabId = section.id;
+    var tabLink = document.querySelector('nav a[href=\"#' + tabId + '\"]');
+    if (tabLink) showTab(tabId, tabLink);
+  }
+
+  row.scrollIntoView({behavior: 'smooth', block: 'center'});
+  row.classList.remove('highlighted');
+  void row.offsetWidth; // trigger reflow
+  row.classList.add('highlighted');
+}
+
 function showTab(id, el) {
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
