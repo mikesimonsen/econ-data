@@ -33,7 +33,7 @@ def _parse_bls_date(year: str, period: str) -> date:
 
 
 def _make_request(bls_ids: list, start_year: int, end_year: int,
-                  api_key: str = None) -> dict | None:
+                  api_key: str = None):
     """Make a single BLS API request. Returns parsed JSON or None on failure."""
     payload = {
         "seriesid": bls_ids,
