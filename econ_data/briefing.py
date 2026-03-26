@@ -203,7 +203,7 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
                       updated_ids: set = None) -> str:
     """Generate the full HTML briefing. Returns HTML string."""
     summary = generate_summary(cfg, db_path)
-    revisions = get_recent_revisions(days=7, db_path=db_path)
+    revisions = get_recent_revisions(days=30, db_path=db_path)
     today = date.today().isoformat()
 
     # Collect all analyses with group context
@@ -476,36 +476,68 @@ def _render_all_groups(ctx) -> str:
 
 def _render_revisions(revisions: list) -> str:
     if not revisions:
-        return "<p class='muted'>No revisions in the past 7 days.</p>"
+        return "<p class='muted'>No revisions in the past 30 days.</p>"
 
-    rows = []
+    # Group by series, then sort dates within each group
+    by_series = {}
     for r in revisions:
-        direction = "up" if r["new_value"] > r["old_value"] else "down"
-        arrow = "&uarr;" if direction == "up" else "&darr;"
-        rows.append(f"""
-        <tr>
-          <td>{r.get('name', r['series_id'])}</td>
-          <td class="series-id">{r['series_id']}</td>
-          <td>{r['date']}</td>
-          <td class="val-col">{r['old_value']:,.1f}</td>
-          <td class="val-col">{r['new_value']:,.1f}</td>
-          <td class="chg-col"><span class="arrow {direction}">{arrow}</span> {r['pct_change']:+.2f}%</td>
-        </tr>""")
+        sid = r["series_id"]
+        if sid not in by_series:
+            by_series[sid] = {
+                "name": r.get("name", sid),
+                "series_id": sid,
+                "revisions": [],
+            }
+        by_series[sid]["revisions"].append(r)
 
-    return f"""
-    <table class="data-table revision-table">
-      <thead>
-        <tr>
-          <th>Series</th>
-          <th>ID</th>
-          <th>Date</th>
-          <th>Old Value</th>
-          <th>New Value</th>
-          <th>Change</th>
-        </tr>
-      </thead>
-      <tbody>{"".join(rows)}</tbody>
-    </table>"""
+    # Sort each group's revisions by date
+    for group in by_series.values():
+        group["revisions"].sort(key=lambda r: r["date"])
+
+    # Sort groups by most recent detected_at (newest first)
+    sorted_groups = sorted(
+        by_series.values(),
+        key=lambda g: max(r.get("detected_at", "") for r in g["revisions"]),
+        reverse=True,
+    )
+
+    parts = []
+    for group in sorted_groups:
+        rows = []
+        for r in group["revisions"]:
+            direction = "up" if r["new_value"] > r["old_value"] else "down"
+            arrow = "&uarr;" if direction == "up" else "&darr;"
+            detected = r.get("detected_at", "")[:10]
+            rows.append(f"""
+            <tr>
+              <td>{r['date']}</td>
+              <td class="val-col">{r['old_value']:,.1f}</td>
+              <td class="val-col">{r['new_value']:,.1f}</td>
+              <td class="chg-col"><span class="arrow {direction}">{arrow}</span> {r['pct_change']:+.2f}%</td>
+              <td class="date-col">{detected}</td>
+            </tr>""")
+
+        parts.append(f"""
+        <div class="group-block">
+          <div class="group-header">
+            <h3>{group['name']}</h3>
+            <span class="series-id">{group['series_id']}</span>
+          </div>
+          <table class="data-table revision-table">
+            <thead>
+              <tr>
+                <th>Observation Date</th>
+                <th class="val-col">Old Value</th>
+                <th class="val-col">New Value</th>
+                <th class="chg-col">Change</th>
+                <th class="date-col">Detected</th>
+              </tr>
+            </thead>
+            <tbody>{"".join(rows)}</tbody>
+          </table>
+        </div>""")
+
+    return "\n".join(parts)
 
 
 def _css() -> str:
