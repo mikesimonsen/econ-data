@@ -404,6 +404,26 @@ groups:
       - id: AHETPI
         name: "Average Hourly Earnings - Production Workers"
 
+  labor-quality:
+    name: "Labor Market Quality"
+    series:
+      - id: LNS12600000
+        name: "Multiple Jobholders (000s)"
+      - id: LNS12026619
+        name: "Multiple Jobholders as % of Employed"
+        units: percent
+      - id: LNS12032194
+        name: "Part-Time for Economic Reasons (000s)"
+      - id: CES0500000017
+        name: "Aggregate Weekly Payrolls Index"
+      - id: TEMPHELPS
+        name: "Temp Help Services Employment (000s)"
+      - id: IC4WSA
+        name: "Initial Claims 4-Week Moving Average"
+      - id: JTSLDR
+        name: "Layoffs and Discharges Rate"
+        units: percent
+
   jobless-claims:
     name: "Jobless Claims (Weekly, SA)"
     series:
