@@ -1,11 +1,12 @@
 """Generate a daily editorial briefing as a self-contained HTML page.
 
 Sections:
-  1. What's Moving — signal triage with sparklines and color coding
-  2. Deep Dive — expandable detail with comparison charts and data tables
-  3. Export — one-click CSV downloads formatted for Flourish
+  1. Today — series released today with inline revision notes
+  2. Recent Data Releases — last 7 days (excluding today) with inline revisions
+  3. All Data — expandable detail with sparklines and data tables
 """
 
+import base64
 import csv
 import io
 import json
@@ -15,6 +16,46 @@ from pathlib import Path
 
 from econ_data.store_sqlite import DB_PATH, get_recent_revisions
 from econ_data.summary import generate_summary
+
+# Extra search keywords per group so users can find series by concept,
+# not just by name.  Keys = group_id, values = space-separated terms.
+_GROUP_SEARCH_TAGS = {
+    "cpi": "inflation prices consumer",
+    "cpi-metro": "inflation prices consumer metro city",
+    "pce": "inflation prices consumer",
+    "ppi": "inflation prices producer wholesale",
+    "case-shiller": "home price prices housing",
+    "existing-home-sales": "home sales housing prices",
+    "existing-home-sales-nsa": "home sales housing prices",
+    "new-home-sales": "home sales housing prices",
+    "housing-starts": "housing construction residential",
+    "building-permits": "housing construction residential",
+    "housing-under-construction": "housing construction residential",
+    "housing-completions": "housing construction residential",
+    "construction-spending": "housing construction residential spending",
+    "construction-employment": "construction jobs employment",
+    "jolts": "jobs labor openings hires quits",
+    "unemployment": "jobs labor unemployment",
+    "labor-force": "jobs labor employment participation",
+    "labor-quality": "jobs labor",
+    "jobless-claims": "jobs labor unemployment claims",
+    "treasury-yields": "rates bonds interest",
+    "mortgage-rates": "rates mortgage interest housing",
+    "households": "housing homeownership vacancy",
+}
+
+_FAVICON_CACHE = None
+_FAVICON_PATH = Path(__file__).parent.parent / "MS-MikeSimonsen-logo1.png"
+
+
+def _favicon_b64() -> str:
+    global _FAVICON_CACHE
+    if _FAVICON_CACHE is None:
+        if _FAVICON_PATH.exists():
+            _FAVICON_CACHE = base64.b64encode(_FAVICON_PATH.read_bytes()).decode()
+        else:
+            _FAVICON_CACHE = ""
+    return _FAVICON_CACHE
 
 
 def _sparkline_data(series_id: str, n: int = 24,
@@ -110,8 +151,14 @@ def _signal_class(signal: str) -> str:
         return "signal-unusual"
     if "accelerat" in s or "decelerat" in s:
         return "signal-accel"
+    if "worsening" in s or "improving" in s:
+        return "signal-accel"
     if "turned negative" in s or "turned positive" in s:
         return "signal-turn"
+    if "lowest since" in s or "highest since" in s or "all-time" in s:
+        return "signal-extreme"
+    if "yoy negative" in s or "yoy positive" in s:
+        return "signal-sustained"
     return "signal-info"
 
 
@@ -139,8 +186,9 @@ def _trend_arrow(a: dict) -> str:
     return '<span class="arrow flat">&rarr;</span>'
 
 
-def _series_csv(series_id: str, name: str, db_path: Path = DB_PATH) -> str:
-    """Build a Flourish-ready CSV string for a series."""
+def _series_csv(series_id: str, name: str, db_path: Path = DB_PATH,
+                revisions: list = None) -> str:
+    """Build a Flourish-ready CSV string for a series, with revision columns."""
     con = sqlite3.connect(db_path)
     rows = con.execute(
         "SELECT date, value FROM observations "
@@ -166,11 +214,20 @@ def _series_csv(series_id: str, name: str, db_path: Path = DB_PATH) -> str:
     period_map = dict(period_rows)
     yoy_map = dict(yoy_rows)
 
+    # Build revision lookup: date -> (old_value, diff)
+    rev_map = {}
+    if revisions:
+        for r in revisions:
+            rev_map[r["date"]] = (r["old_value"], r["new_value"] - r["old_value"])
+
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["date", name, "Period Change", "YoY Change"])
+    writer.writerow(["date", name, "Period Change", "YoY Change",
+                     "Revised From", "Revision Diff"])
     for d, v in rows:
-        writer.writerow([d, v, period_map.get(d, ""), yoy_map.get(d, "")])
+        old_val, diff = rev_map.get(d, ("", ""))
+        writer.writerow([d, v, period_map.get(d, ""), yoy_map.get(d, ""),
+                        old_val, diff])
     return buf.getvalue()
 
 
@@ -222,6 +279,7 @@ def _release_dates(db_path: Path = DB_PATH) -> dict:
 
 def _load_analysis(today: str) -> str:
     """Load today's LLM daily analysis markdown, returning just the narrative."""
+    import re
     analysis_path = Path(__file__).parent.parent / "summaries" / f"daily analysis {today}.md"
     if not analysis_path.exists():
         return ""
@@ -233,7 +291,12 @@ def _load_analysis(today: str) -> str:
     lines = narrative.split("\n")
     if lines and lines[0].startswith("# "):
         lines = lines[1:]
-    return "\n".join(lines).strip()
+    narrative = "\n".join(lines).strip()
+    # Strip any "## Revisions" section (revisions now shown inline with data)
+    narrative = re.sub(
+        r'## Revisions\s*\n.*?(?=\n## |\Z)', '', narrative, flags=re.DOTALL
+    ).strip()
+    return narrative
 
 
 def _md_to_html(md: str, name_to_sid: dict = None) -> str:
@@ -368,16 +431,13 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
     summary = generate_summary(cfg, db_path)
     revisions = get_recent_revisions(days=30, db_path=db_path)
     today = date.today().isoformat()
+    recent_cutoff = (date.today() - timedelta(days=7)).isoformat()
 
     # Collect all analyses with group context
     all_series = []  # (group_id, group_name, analysis)
     for gid, gdata in summary.get("groups", {}).items():
         for a in gdata["series"]:
             all_series.append((gid, gdata["name"], a))
-
-    # Split into signal vs quiet
-    signal_series = [(g, gn, a) for g, gn, a in all_series if a["signals"]]
-    quiet_series = [(g, gn, a) for g, gn, a in all_series if not a["signals"]]
 
     # Get sparkline data for all series
     sparklines = {}
@@ -386,31 +446,50 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
         pts = _sparkline_data(sid, n=24, db_path=db_path)
         sparklines[sid] = pts
 
-    # Build CSV data for export (as JSON-encoded strings embedded in page)
-    csv_data = {}
-    for _, _, a in all_series:
-        csv_data[a["series_id"]] = _series_csv(
-            a["series_id"], a["name"], db_path)
-    group_csvs = {}
-    for gid, gdata in summary.get("groups", {}).items():
-        group_csvs[gid] = _group_csv(gid, gdata["series"], db_path)
-
     release_ts = _release_dates(db_path)
     analysis_md = _load_analysis(today)
     name_map = _build_name_map(summary)
 
+    # Build revision lookup by series_id
+    revisions_by_series = {}
+    for r in revisions:
+        revisions_by_series.setdefault(r["series_id"], []).append(r)
+
+    # Build CSV data for export (with revision columns)
+    csv_data = {}
+    for _, _, a in all_series:
+        sid = a["series_id"]
+        csv_data[sid] = _series_csv(
+            sid, a["name"], db_path, revisions_by_series.get(sid))
+    group_csvs = {}
+    for gid, gdata in summary.get("groups", {}).items():
+        group_csvs[gid] = _group_csv(gid, gdata["series"], db_path)
+
+    # Classify series by release recency
+    today_series = []
+    recent_series = []
+    for gid, gname, a in all_series:
+        sid = a["series_id"]
+        captured = release_ts.get(sid, "")[:10]
+        if captured == today:
+            today_series.append((gid, gname, a))
+        elif captured >= recent_cutoff:
+            recent_series.append((gid, gname, a))
+
     html = _render_page(
         today=today,
         analysis_html=_md_to_html(analysis_md, name_map) if analysis_md else "",
-        signal_series=signal_series,
-        quiet_series=quiet_series,
-        revisions=revisions,
+        today_series=today_series,
+        recent_series=recent_series,
+        revisions_by_series=revisions_by_series,
         release_dates=release_ts,
         sparklines=sparklines,
         summary=summary,
         csv_data=csv_data,
         group_csvs=group_csvs,
         updated_ids=updated_ids or set(),
+        cfg=cfg,
+        db_path=db_path,
     )
     return html
 
@@ -419,19 +498,28 @@ def _render_page(**ctx) -> str:
     """Render the full HTML page."""
     today = ctx["today"]
 
-    # Build sections
+    # Build sections — today_html must render first (it populates chart_csv_data)
     analysis_html = ctx.get("analysis_html", "")
-    signals_html = _render_signals(ctx)
-    revisions_html = _render_revisions(ctx["revisions"])
+    today_html = _render_today(ctx)
+    recent_html = _render_recent(ctx)
     all_groups_html = _render_all_groups(ctx)
     csv_json = json.dumps(ctx["csv_data"])
     group_csv_json = json.dumps(ctx["group_csvs"])
+    chart_csv_json = json.dumps(ctx.get("chart_csv_data", {}))
+    # Build release date map for CSV filenames (series_id -> YYYY-MM-DD)
+    release_date_map = {
+        sid: ts[:10] for sid, ts in ctx.get("release_dates", {}).items() if ts
+    }
+    release_dates_json = json.dumps(release_date_map)
+
+    recent_count = len(ctx["recent_series"])
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="data:image/png;base64,{_favicon_b64()}">
 <title>Econ Data Briefing — {today}</title>
 <style>
 {_css()}
@@ -445,29 +533,34 @@ def _render_page(**ctx) -> str:
 </header>
 
 <nav>
-  <a href="#signals" class="active" onclick="showTab('signals', this)">What's Moving</a>
+  <a href="#today" class="active" onclick="showTab('today', this)">Today</a>
+  <a href="#recent" onclick="showTab('recent', this)">Recent Data Releases{_badge(recent_count)}</a>
   <a href="#deepdive" onclick="showTab('deepdive', this)">All Data</a>
-  <a href="#revisions" onclick="showTab('revisions', this)">Revisions{_badge(len(ctx['revisions']))}</a>
+  <div class="search-box">
+    <input type="text" id="search-input" placeholder="Search series..." oninput="filterSeries(this.value)">
+  </div>
 </nav>
 
 <main>
-  <section id="signals" class="tab-content active">
+  <section id="today" class="tab-content active">
     {f'<div class="analysis-block">{analysis_html}</div>' if analysis_html else ''}
-    {signals_html}
+    {today_html}
+  </section>
+
+  <section id="recent" class="tab-content">
+    {recent_html}
   </section>
 
   <section id="deepdive" class="tab-content">
     {all_groups_html}
-  </section>
-
-  <section id="revisions" class="tab-content">
-    {revisions_html}
   </section>
 </main>
 
 <script>
 var csvData = {csv_json};
 var groupCsvData = {group_csv_json};
+var chartCsvData = {chart_csv_json};
+var releaseDates = {release_dates_json};
 {_js()}
 </script>
 </body>
@@ -480,19 +573,63 @@ def _badge(n: int) -> str:
     return f' <span class="badge">{n}</span>'
 
 
-def _render_signals(ctx) -> str:
-    """Render the What's Moving section, sorted by most recent data first."""
-    signal_series = ctx["signal_series"]
+def _render_revision_notes(series_id: str, revisions_by_series: dict) -> str:
+    """Render a mini revision table for a series."""
+    revs = revisions_by_series.get(series_id, [])
+    if not revs:
+        return ""
+    # Sort by observation date, most recent first
+    revs = sorted(revs, key=lambda r: r["date"], reverse=True)
+    rows = []
+    for r in revs:
+        direction = "up" if r["new_value"] > r["old_value"] else "down"
+        arrow = "&uarr;" if direction == "up" else "&darr;"
+        # Always show full date — monthly data is always the 1st so it's
+        # still clear, and weekly/daily data keeps its precision
+        try:
+            d = datetime.strptime(r["date"], "%Y-%m-%d")
+            label = d.strftime("%b %-d, %Y")
+        except (ValueError, TypeError):
+            label = r["date"]
+        diff = r["new_value"] - r["old_value"]
+        rows.append(
+            f'<tr>'
+            f'<td>{label}</td>'
+            f'<td class="val-col">{r["old_value"]:,.0f}</td>'
+            f'<td class="val-col">{r["new_value"]:,.0f}</td>'
+            f'<td class="chg-col"><span class="arrow {direction}">{arrow}</span> {diff:+,.0f}</td>'
+            f'<td class="chg-col">{r["pct_change"]:+.1f}%</td>'
+            f'</tr>'
+        )
+    return (
+        '<div class="revision-note">'
+        '<div class="revision-label">Revisions</div>'
+        '<table class="revision-mini-table">'
+        '<thead><tr><th>Period</th><th class="val-col">Was</th>'
+        '<th class="val-col">Now</th><th class="chg-col">Diff</th>'
+        '<th class="chg-col">%</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody>'
+        '</table></div>'
+    )
+
+
+def _search_terms(series_id: str, name: str, group_id: str,
+                   group_name: str) -> str:
+    """Build a lowercase search string for a series row."""
+    extra = _GROUP_SEARCH_TAGS.get(group_id, "")
+    return f"{name} {series_id} {group_name} {extra}".lower()
+
+
+def _render_series_table(series_list, ctx, show_signals=True) -> str:
+    """Render a grouped table of series with optional inline revisions."""
     sparklines = ctx["sparklines"]
     updated_ids = ctx["updated_ids"]
     release_dates = ctx.get("release_dates", {})
-
-    if not signal_series:
-        return "<p class='muted'>No signals today.</p>"
+    revisions_by_series = ctx.get("revisions_by_series", {})
 
     # Group by group_id
     by_group = {}
-    for gid, gname, a in signal_series:
+    for gid, gname, a in series_list:
         by_group.setdefault(gid, {"name": gname, "series": []})
         by_group[gid]["series"].append(a)
 
@@ -512,17 +649,23 @@ def _render_signals(ctx) -> str:
             fresh = "fresh" if sid in updated_ids else ""
             spark = _sparkline_svg(sparklines.get(sid, []))
             released = _format_release(release_dates.get(sid, ""))
+            search = _search_terms(sid, a["name"], gid, gdata["name"])
 
-            signal_tags = " ".join(
-                f'<span class="signal-tag {_signal_class(s)}">{s}</span>'
-                for s in a["signals"]
-            )
+            signal_tags = ""
+            if show_signals and a["signals"]:
+                signal_tags = " ".join(
+                    f'<span class="signal-tag {_signal_class(s)}">{s}</span>'
+                    for s in a["signals"]
+                )
 
             freq = a.get("frequency", "monthly")
             date_str = a["latest_date"] if freq == "daily" else a["latest_date"][:7]
 
+            revision_html = _render_revision_notes(sid, revisions_by_series)
+            has_rev = ' has-revision' if revision_html else ''
+
             rows.append(f"""
-            <tr class="series-row {fresh}" id="row-{sid}" onclick="toggleDetail('{sid}')">
+            <tr class="series-row {fresh}{has_rev}" id="row-{sid}" data-search="{search}" data-sid="{sid}" onclick="toggleDetail('{sid}')">
               <td class="name-col">
                 <div class="series-name">{a['name']}</div>
                 <div class="series-id">{sid}</div>
@@ -535,7 +678,13 @@ def _render_signals(ctx) -> str:
               <td class="release-col">{released}</td>
               <td class="signal-col">{signal_tags}</td>
               <td class="export-col"><button class="btn-export" onclick="event.stopPropagation(); downloadCsv('{sid}')">CSV</button></td>
-            </tr>
+            </tr>""")
+            if revision_html:
+                rows.append(f"""
+            <tr class="revision-row" data-rev-for="{sid}">
+              <td colspan="9">{revision_html}</td>
+            </tr>""")
+            rows.append(f"""
             <tr class="detail-row" id="detail-{sid}" style="display:none">
               <td colspan="9">
                 <div class="detail-content" id="detail-content-{sid}">Loading...</div>
@@ -543,7 +692,7 @@ def _render_signals(ctx) -> str:
             </tr>""")
 
         parts.append(f"""
-        <div class="group-block">
+        <div class="group-block" data-group="{gid}">
           <div class="group-header">
             <h3>{gdata['name']}</h3>
             <button class="btn-export-group" onclick="downloadGroupCsv('{gid}')">Export Group CSV</button>
@@ -567,6 +716,362 @@ def _render_signals(ctx) -> str:
         </div>""")
 
     return "\n".join(parts)
+
+
+def _signal_score(signal: str) -> int:
+    """Weight a signal string for hero chart ranking."""
+    s = signal.lower()
+    if "lowest since" in s or "highest since" in s or "all-time" in s:
+        return 10
+    if "unusual" in s:
+        return 8
+    if "reversal" in s:
+        return 6
+    if "yoy negative" in s or "yoy positive" in s:
+        return 5
+    if "accelerat" in s or "decelerat" in s or "worsening" in s or "improving" in s:
+        return 4
+    if "turned negative" in s or "turned positive" in s:
+        return 3
+    if "outlier" in s:
+        return 2
+    return 1
+
+
+def _pick_hero_series(today_series: list, cfg: dict) -> list:
+    """Score today's series and return top 1-2 for hero charts.
+
+    Returns list of (group_id, group_name, analysis, chart_type, n_points)
+    where chart_type is 'yoy' or 'raw'.
+    """
+    if not today_series:
+        return []
+
+    # Build headline set (first series in each group)
+    headlines = set()
+    for gid, g in cfg.get("groups", {}).items():
+        series = g.get("series", [])
+        if series:
+            headlines.add(series[0]["id"])
+
+    scored = []
+    for gid, gname, a in today_series:
+        sid = a["series_id"]
+        freq = a.get("frequency", "monthly")
+
+        # Sum signal weights
+        score = sum(_signal_score(s) for s in a["signals"])
+        if score == 0:
+            score = 1  # baseline so headline bonus still works
+
+        # Frequency penalty
+        if freq == "daily":
+            score *= 0.5
+        elif freq == "weekly":
+            score *= 0.8
+
+        # Headline bonus — headline/national series get strong preference
+        if sid in headlines:
+            score *= 2.0
+
+        # Decide what to chart
+        signals_lower = " ".join(a["signals"]).lower()
+        is_yoy_signal = any(kw in signals_lower for kw in [
+            "yoy", "lowest since", "highest since", "all-time",
+            "accelerat", "decelerat", "worsening", "improving",
+        ])
+        chart_type = "yoy" if is_yoy_signal else "raw"
+
+        # Decide how many points of history
+        n_points = _chart_history_length(a, freq)
+
+        scored.append((score, gid, gname, a, chart_type, n_points))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    if not scored:
+        return []
+
+    result = [(scored[0][1], scored[0][2], scored[0][3],
+               scored[0][4], scored[0][5])]
+    # Add second chart if it scores within 70% of the top
+    if len(scored) > 1 and scored[1][0] >= scored[0][0] * 0.7:
+        result.append((scored[1][1], scored[1][2], scored[1][3],
+                       scored[1][4], scored[1][5]))
+    return result
+
+
+def _chart_history_length(a: dict, freq: str) -> int:
+    """Determine how many observations to show in the hero chart."""
+    signals_lower = " ".join(a["signals"]).lower()
+
+    # If signal mentions "since YYYY", go back to that date + buffer
+    import re
+    since_match = re.search(r'since (\w+ \d{4})', signals_lower)
+    if since_match:
+        try:
+            ref = datetime.strptime(since_match.group(1).title(), "%b %Y")
+            latest = datetime.strptime(a["latest_date"], "%Y-%m-%d")
+            months = (latest.year - ref.year) * 12 + (latest.month - ref.month)
+            n = months + 6  # buffer
+        except (ValueError, TypeError):
+            n = 36
+    elif re.search(r'negative \d+mo|positive \d+mo', signals_lower):
+        # Sustained streak — show 2x the streak
+        streak_match = re.search(r'(\d+)mo', signals_lower)
+        if streak_match:
+            n = int(streak_match.group(1)) * 2 + 6
+        else:
+            n = 36
+    else:
+        n = 36
+
+    # Clamp
+    if freq == "daily":
+        return min(max(n * 21, 252), 504)  # trading days, 1-2 years
+    return min(max(n, 18), 60)
+
+
+def _chart_data(series_id: str, chart_type: str, n: int,
+                db_path: Path = DB_PATH) -> list:
+    """Fetch data for a hero chart. Returns [(date, value), ...]."""
+    con = sqlite3.connect(db_path)
+    if chart_type == "yoy":
+        rows = con.execute(
+            "SELECT date, value FROM calculated "
+            "WHERE series_id = ? AND calc_type IN ('yoy_pct', 'yoy_pp') "
+            "ORDER BY date DESC LIMIT ?",
+            (series_id, n),
+        ).fetchall()
+    else:
+        rows = con.execute(
+            "SELECT date, value FROM observations "
+            "WHERE series_id = ? ORDER BY date DESC LIMIT ?",
+            (series_id, n),
+        ).fetchall()
+    con.close()
+    return list(reversed(rows))
+
+
+def _hero_chart_svg(points: list, title: str, is_yoy: bool = False,
+                    width: int = 800, height: int = 280) -> str:
+    """Render a full chart SVG with axes, gridlines, labels, and zero line."""
+    if len(points) < 2:
+        return ""
+
+    values = [p[1] for p in points]
+    vmin, vmax = min(values), max(values)
+    vrange = vmax - vmin if vmax != vmin else 1
+    # 10% padding
+    pad_v = vrange * 0.1
+    vmin_p = vmin - pad_v
+    vmax_p = vmax + pad_v
+    vrange_p = vmax_p - vmin_p
+
+    # Layout
+    left_margin = 65
+    right_margin = 20
+    top_margin = 15
+    bottom_margin = 35
+    plot_w = width - left_margin - right_margin
+    plot_h = height - top_margin - bottom_margin
+
+    color = "#d29922" if is_yoy else "#4A90D9"
+    unit = "%" if is_yoy else ""
+
+    def x_pos(i):
+        return left_margin + plot_w * i / (len(points) - 1)
+
+    def y_pos(v):
+        return top_margin + plot_h * (1 - (v - vmin_p) / vrange_p)
+
+    parts = []
+    parts.append(
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="0 0 {width} {height}" '
+        f'style="width:100%;max-width:{width}px;height:auto;'
+        f'background:var(--surface);border-radius:8px">'
+    )
+
+    # Gridlines + Y-axis labels
+    n_grid = 5
+    for i in range(n_grid + 1):
+        gv = vmin_p + vrange_p * i / n_grid
+        gy = y_pos(gv)
+        parts.append(
+            f'<line x1="{left_margin}" y1="{gy:.1f}" '
+            f'x2="{width - right_margin}" y2="{gy:.1f}" '
+            f'stroke="#30363d" stroke-width="0.5"/>'
+        )
+        if is_yoy:
+            label = f"{gv:+.1f}{unit}"
+        elif abs(gv) >= 1000:
+            label = f"{gv:,.0f}"
+        elif abs(gv) >= 10:
+            label = f"{gv:.1f}"
+        else:
+            label = f"{gv:.2f}"
+        parts.append(
+            f'<text x="{left_margin - 8}" y="{gy + 4:.1f}" '
+            f'text-anchor="end" fill="#8b949e" font-size="11" '
+            f'font-family="-apple-system,sans-serif">{label}</text>'
+        )
+
+    # Zero line for YoY charts
+    if is_yoy and vmin_p < 0 < vmax_p:
+        zy = y_pos(0)
+        parts.append(
+            f'<line x1="{left_margin}" y1="{zy:.1f}" '
+            f'x2="{width - right_margin}" y2="{zy:.1f}" '
+            f'stroke="#8b949e" stroke-width="1" stroke-dasharray="4,3"/>'
+        )
+
+    # X-axis labels — pick ~6 evenly spaced dates
+    n_labels = min(6, len(points))
+    step = max(1, (len(points) - 1) // (n_labels - 1)) if n_labels > 1 else 1
+    for i in range(0, len(points), step):
+        d = points[i][0]
+        try:
+            dt = datetime.strptime(d, "%Y-%m-%d")
+            label = dt.strftime("%b '%y")
+        except (ValueError, TypeError):
+            label = d[:7]
+        xp = x_pos(i)
+        parts.append(
+            f'<text x="{xp:.1f}" y="{height - 8}" '
+            f'text-anchor="middle" fill="#8b949e" font-size="11" '
+            f'font-family="-apple-system,sans-serif">{label}</text>'
+        )
+
+    # Data polyline
+    coords = []
+    for i, (d, v) in enumerate(points):
+        coords.append(f"{x_pos(i):.1f},{y_pos(v):.1f}")
+    polyline = " ".join(coords)
+    parts.append(
+        f'<polyline points="{polyline}" fill="none" stroke="{color}" '
+        f'stroke-width="2" stroke-linejoin="round"/>'
+    )
+
+    # Hover circles with tooltips
+    for i, (d, v) in enumerate(points):
+        xp = x_pos(i)
+        yp = y_pos(v)
+        try:
+            dt = datetime.strptime(d, "%Y-%m-%d")
+            dlabel = dt.strftime("%b %Y")
+        except (ValueError, TypeError):
+            dlabel = d
+        if is_yoy:
+            vlabel = f"{v:+.1f}%"
+        elif abs(v) >= 1000:
+            vlabel = f"{v:,.0f}"
+        elif abs(v) >= 10:
+            vlabel = f"{v:.1f}"
+        else:
+            vlabel = f"{v:.2f}"
+        parts.append(
+            f'<circle cx="{xp:.1f}" cy="{yp:.1f}" r="6" '
+            f'fill="transparent" stroke="none" class="spark-hover">'
+            f'<title>{dlabel}: {vlabel}</title></circle>'
+        )
+
+    # Visible dot on last point
+    lx = x_pos(len(points) - 1)
+    ly = y_pos(values[-1])
+    parts.append(
+        f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="4" fill="{color}"/>'
+    )
+
+    parts.append('</svg>')
+    return "\n".join(parts)
+
+
+def _chart_csv_data(series_id: str, name: str, points: list,
+                    chart_type: str) -> str:
+    """Build CSV string for chart data download."""
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    col_name = f"{name} ({'YoY %' if chart_type == 'yoy' else 'Value'})"
+    writer.writerow(["date", col_name])
+    for d, v in points:
+        writer.writerow([d, v])
+    return buf.getvalue()
+
+
+def _render_hero_charts(ctx) -> str:
+    """Pick hero series and render charts for the Today tab."""
+    cfg = ctx.get("cfg", {})
+    today_series = ctx["today_series"]
+    db_path = ctx.get("db_path", DB_PATH)
+    release_dates = ctx.get("release_dates", {})
+
+    heroes = _pick_hero_series(today_series, cfg)
+    if not heroes:
+        return ""
+
+    chart_csvs = {}
+    parts = []
+    for i, (gid, gname, a, chart_type, n_points) in enumerate(heroes):
+        sid = a["series_id"]
+        points = _chart_data(sid, chart_type, n_points, db_path)
+        if len(points) < 2:
+            continue
+
+        chart_id = f"hero-chart-{i}"
+        is_yoy = chart_type == "yoy"
+        chart_label = "Year-over-Year Change" if is_yoy else a["name"]
+        svg = _hero_chart_svg(points, chart_label, is_yoy)
+
+        # Caption
+        is_pct = a.get("is_percent", False)
+        latest_str = _format_val(a["latest_value"], is_pct)
+        yoy_str = f" ({a['yoy_pct']:+.1f}% YoY)" if a.get("yoy_pct") is not None else ""
+        signal_str = ". ".join(a["signals"]) if a["signals"] else ""
+        caption = f"<strong>{a['name']}</strong>"
+        if signal_str:
+            caption += f" &mdash; {signal_str}."
+        caption += f" Latest: {latest_str}{yoy_str}"
+
+        # Release date for filename
+        rd = release_dates.get(sid, "")[:10]
+        suffix = f"_yoy" if is_yoy else ""
+        fname_base = f"{sid}{suffix}_{rd}" if rd else f"{sid}{suffix}"
+
+        # Store chart CSV
+        chart_csvs[chart_id] = _chart_csv_data(sid, a["name"], points, chart_type)
+
+        parts.append(f"""
+        <div class="hero-chart" id="{chart_id}-container">
+          <div class="chart-title">{a['name']}{' — YoY %' if is_yoy else ''}</div>
+          {svg}
+          <div class="chart-caption">{caption}</div>
+          <div class="chart-actions">
+            <button class="btn-export" onclick="downloadChartCsv('{chart_id}', '{fname_base}')">CSV</button>
+            <button class="btn-export" onclick="downloadChartPng('{chart_id}', '{fname_base}')">PNG</button>
+          </div>
+        </div>""")
+
+    # Store chart CSVs in context for JS embedding
+    ctx["chart_csv_data"] = chart_csvs
+    return "\n".join(parts)
+
+
+def _render_today(ctx) -> str:
+    """Render the Today section — hero charts + data table."""
+    today_series = ctx["today_series"]
+    hero_html = _render_hero_charts(ctx)
+    if not today_series:
+        return hero_html + "<p class='muted'>No new data released today.</p>"
+    table_html = _render_series_table(today_series, ctx)
+    return hero_html + table_html
+
+
+def _render_recent(ctx) -> str:
+    """Render the Recent Data Releases section — last 7 days, excluding today."""
+    recent_series = ctx["recent_series"]
+    if not recent_series:
+        return "<p class='muted'>No data releases in the past 7 days.</p>"
+    return _render_series_table(recent_series, ctx)
 
 
 def _render_all_groups(ctx) -> str:
@@ -608,8 +1113,9 @@ def _render_all_groups(ctx) -> str:
                 unit = "d" if freq == "daily" else "mo"
                 trend = f'<span class="trend">{a["trend_dir"]} {a["trend_periods"]}{unit}</span>'
 
+            search = _search_terms(sid, a["name"], gid, gdata["name"])
             rows.append(f"""
-            <tr class="series-row {fresh}" id="row-{sid}" onclick="toggleDetail('{sid}')">
+            <tr class="series-row {fresh}" id="row-{sid}" data-search="{search}" data-sid="{sid}" onclick="toggleDetail('{sid}')">
               <td class="name-col">
                 <div class="series-name">{a['name']}</div>
                 <div class="series-id">{sid}</div>
@@ -630,7 +1136,7 @@ def _render_all_groups(ctx) -> str:
             </tr>""")
 
         parts.append(f"""
-        <div class="group-block">
+        <div class="group-block" data-group="{gid}">
           <div class="group-header">
             <h3>{gdata['name']}</h3>
             <button class="btn-export-group" onclick="downloadGroupCsv('{gid}')">Export Group CSV</button>
@@ -656,70 +1162,6 @@ def _render_all_groups(ctx) -> str:
     return "\n".join(parts)
 
 
-def _render_revisions(revisions: list) -> str:
-    if not revisions:
-        return "<p class='muted'>No revisions in the past 30 days.</p>"
-
-    # Group by series, then sort dates within each group
-    by_series = {}
-    for r in revisions:
-        sid = r["series_id"]
-        if sid not in by_series:
-            by_series[sid] = {
-                "name": r.get("name", sid),
-                "series_id": sid,
-                "revisions": [],
-            }
-        by_series[sid]["revisions"].append(r)
-
-    # Sort each group's revisions by date
-    for group in by_series.values():
-        group["revisions"].sort(key=lambda r: r["date"])
-
-    # Sort groups by most recent detected_at (newest first)
-    sorted_groups = sorted(
-        by_series.values(),
-        key=lambda g: max(r.get("detected_at", "") for r in g["revisions"]),
-        reverse=True,
-    )
-
-    parts = []
-    for group in sorted_groups:
-        rows = []
-        for r in group["revisions"]:
-            direction = "up" if r["new_value"] > r["old_value"] else "down"
-            arrow = "&uarr;" if direction == "up" else "&darr;"
-            detected = r.get("detected_at", "")[:10]
-            rows.append(f"""
-            <tr>
-              <td>{r['date']}</td>
-              <td class="val-col">{r['old_value']:,.1f}</td>
-              <td class="val-col">{r['new_value']:,.1f}</td>
-              <td class="chg-col"><span class="arrow {direction}">{arrow}</span> {r['pct_change']:+.2f}%</td>
-              <td class="date-col">{detected}</td>
-            </tr>""")
-
-        parts.append(f"""
-        <div class="group-block">
-          <div class="group-header">
-            <h3>{group['name']}</h3>
-            <span class="series-id">{group['series_id']}</span>
-          </div>
-          <table class="data-table revision-table">
-            <thead>
-              <tr>
-                <th>Observation Date</th>
-                <th class="val-col">Old Value</th>
-                <th class="val-col">New Value</th>
-                <th class="chg-col">Change</th>
-                <th class="date-col">Detected</th>
-              </tr>
-            </thead>
-            <tbody>{"".join(rows)}</tbody>
-          </table>
-        </div>""")
-
-    return "\n".join(parts)
 
 
 def _css() -> str:
@@ -778,6 +1220,26 @@ nav a.active {
   color: var(--text);
   border-bottom-color: var(--accent);
 }
+
+.search-box {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+.search-box input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  width: 200px;
+  outline: none;
+}
+.search-box input:focus {
+  border-color: var(--accent);
+}
+.search-box input::placeholder { color: var(--text-muted); }
 
 .badge {
   background: var(--amber);
@@ -916,6 +1378,8 @@ main { padding: 24px 32px; max-width: 1400px; }
 .signal-accel { background: rgba(88, 166, 255, 0.2); color: var(--blue); }
 .signal-turn { background: rgba(63, 185, 80, 0.15); color: var(--green); }
 .signal-outlier { background: rgba(188, 76, 255, 0.2); color: #bc4cff; }
+.signal-extreme { background: rgba(248, 81, 73, 0.25); color: var(--red); font-weight: 600; }
+.signal-sustained { background: rgba(210, 153, 34, 0.15); color: var(--amber); }
 .signal-info { background: rgba(139, 148, 158, 0.15); color: var(--text-muted); }
 
 .detail-row td {
@@ -957,16 +1421,98 @@ main { padding: 24px 32px; max-width: 1400px; }
   color: var(--accent);
 }
 
-.muted { color: var(--text-muted); padding: 32px 0; }
+.hero-chart {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+}
+.chart-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+.chart-caption {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 12px;
+  line-height: 1.6;
+}
+.chart-caption strong { color: var(--text); }
+.chart-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
 
-.revision-table .series-id { font-size: 12px; }
+.muted { color: var(--text-muted); padding: 32px 0; }
+.search-active .analysis-block { display: none; }
+.search-active .muted { display: none; }
+
+.revision-row td {
+  padding: 4px 12px !important;
+  border-bottom: 1px solid var(--border);
+  background: rgba(210, 153, 34, 0.04);
+}
+.revision-note {
+  padding: 6px 12px;
+}
+.revision-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--amber);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  cursor: pointer;
+}
+.revision-label::before {
+  content: "▸ ";
+  font-size: 10px;
+}
+.revision-row.rev-open .revision-label::before {
+  content: "▾ ";
+}
+.revision-mini-table {
+  display: none;
+  width: auto;
+  font-size: 12px;
+  font-family: monospace;
+  border-collapse: collapse;
+}
+.revision-row.rev-open .revision-mini-table {
+  display: table;
+}
+.rev-badge {
+  font-size: 10px;
+  color: var(--amber);
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.revision-mini-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 11px;
+  padding: 2px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+}
+.revision-mini-table th:first-child { text-align: left; }
+.revision-mini-table td {
+  padding: 2px 10px;
+  border-bottom: none;
+}
+.revision-mini-table .val-col { text-align: right; }
+.revision-mini-table .chg-col { text-align: right; }
 """
 
 
 def _js() -> str:
     return """
 function scrollToSeries(sid) {
-  // Switch to the signals tab first (the row might be there)
+  // Find the row and switch to its tab if needed
   var row = document.getElementById('row-' + sid);
   if (!row) return;
 
@@ -1036,7 +1582,8 @@ function downloadCsv(sid) {
   var blob = new Blob([csv], {type: 'text/csv'});
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = sid + '.csv';
+  var rd = releaseDates[sid] || '';
+  a.download = rd ? sid + '_' + rd + '.csv' : sid + '.csv';
   a.click();
 }
 
@@ -1049,4 +1596,144 @@ function downloadGroupCsv(gid) {
   a.download = gid + '.csv';
   a.click();
 }
+
+function downloadChartCsv(chartId, fnameBase) {
+  var csv = chartCsvData[chartId];
+  if (!csv) return;
+  var blob = new Blob([csv], {type: 'text/csv'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fnameBase + '.csv';
+  a.click();
+}
+
+function downloadChartPng(chartId, fnameBase) {
+  var container = document.getElementById(chartId + '-container');
+  if (!container) return;
+  var svg = container.querySelector('svg');
+  if (!svg) return;
+  var svgData = new XMLSerializer().serializeToString(svg);
+  // Inline CSS variables for export
+  svgData = svgData.replace(/var\(--surface\)/g, '#161b22');
+  svgData = svgData.replace(/var\(--border\)/g, '#30363d');
+  var canvas = document.createElement('canvas');
+  var rect = svg.getBoundingClientRect();
+  var scale = 2; // retina
+  canvas.width = rect.width * scale;
+  canvas.height = rect.height * scale;
+  var ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  var img = new Image();
+  img.onload = function() {
+    ctx.fillStyle = '#161b22';
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    ctx.drawImage(img, 0, 0, rect.width, rect.height);
+    canvas.toBlob(function(blob) {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fnameBase + '.png';
+      a.click();
+    });
+  };
+  img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+}
+
+// --- Revision toggle ---
+document.addEventListener('click', function(e) {
+  var label = e.target.closest('.revision-label');
+  if (!label) return;
+  e.stopPropagation();
+  var revRow = label.closest('.revision-row');
+  if (revRow) revRow.classList.toggle('rev-open');
+});
+
+// --- Search ---
+var _searchActiveTab = null;
+
+function filterSeries(query) {
+  var q = query.toLowerCase().trim();
+  var main = document.querySelector('main');
+  var allRows = document.querySelectorAll('.series-row');
+  var allRevRows = document.querySelectorAll('.revision-row');
+  var allDetailRows = document.querySelectorAll('.detail-row');
+  var allGroups = document.querySelectorAll('.group-block');
+  var tabs = document.querySelectorAll('.tab-content');
+
+  if (!q) {
+    // Restore normal tab view
+    main.classList.remove('search-active');
+    allRows.forEach(function(r) { r.style.display = ''; });
+    allRevRows.forEach(function(r) { r.style.display = ''; });
+    allGroups.forEach(function(g) { g.style.display = ''; });
+    // Restore tab visibility
+    if (_searchActiveTab) {
+      tabs.forEach(function(t) { t.classList.remove('active'); });
+      document.getElementById(_searchActiveTab).classList.add('active');
+      _searchActiveTab = null;
+    }
+    return;
+  }
+
+  // Remember which tab was active before search, show all tabs
+  if (!_searchActiveTab) {
+    var active = document.querySelector('.tab-content.active');
+    if (active) _searchActiveTab = active.id;
+  }
+  main.classList.add('search-active');
+  tabs.forEach(function(t) { t.classList.add('active'); });
+
+  var terms = q.split(/\s+/);
+  var visibleSids = {};
+
+  allRows.forEach(function(row) {
+    var search = row.getAttribute('data-search') || '';
+    var match = terms.every(function(t) { return search.indexOf(t) >= 0; });
+    row.style.display = match ? '' : 'none';
+    if (match) visibleSids[row.getAttribute('data-sid')] = true;
+  });
+
+  // Hide/show associated revision and detail rows
+  allRevRows.forEach(function(r) {
+    var sid = r.getAttribute('data-rev-for');
+    r.style.display = visibleSids[sid] ? '' : 'none';
+  });
+  allDetailRows.forEach(function(r) {
+    r.style.display = 'none';
+  });
+
+  // Hide groups with no visible rows
+  allGroups.forEach(function(g) {
+    var rows = g.querySelectorAll('.series-row');
+    var anyVisible = false;
+    rows.forEach(function(r) { if (r.style.display !== 'none') anyVisible = true; });
+    g.style.display = anyVisible ? '' : 'none';
+  });
+
+  // Hide tab sections with no visible groups
+  tabs.forEach(function(t) {
+    var groups = t.querySelectorAll('.group-block');
+    if (groups.length === 0) return; // e.g. today with "no data" message
+    var anyGroupVisible = false;
+    groups.forEach(function(g) { if (g.style.display !== 'none') anyGroupVisible = true; });
+    t.style.display = anyGroupVisible ? '' : 'none';
+  });
+}
+
+// Keyboard shortcut: / to focus search
+document.addEventListener('keydown', function(e) {
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey) {
+    var el = document.activeElement;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+    e.preventDefault();
+    document.getElementById('search-input').focus();
+  }
+  if (e.key === 'Escape') {
+    var input = document.getElementById('search-input');
+    if (document.activeElement === input) {
+      input.value = '';
+      filterSeries('');
+      input.blur();
+    }
+  }
+});
 """

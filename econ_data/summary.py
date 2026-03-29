@@ -179,6 +179,96 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
             signals.append("YoY accelerating")
         elif all(d < 0 for d in recent_yoy_diffs):
             signals.append("YoY decelerating")
+        # Softer check: if 4+ of last 5 diffs trend the same way, flag it
+        elif len(yoy_diffs) >= 5:
+            last5 = yoy_diffs[-5:]
+            neg_count = sum(1 for d in last5 if d < 0)
+            pos_count = sum(1 for d in last5 if d > 0)
+            if neg_count >= 4 and "YoY decelerating" not in signals:
+                signals.append("YoY trend worsening")
+            elif pos_count >= 4 and "YoY accelerating" not in signals:
+                signals.append("YoY trend improving")
+
+    # ── Sustained negative/positive YoY ────────────────────
+    # Flag when YoY has stayed negative (or positive in a normally-negative
+    # context) for an extended period — the zero-crossing was the event,
+    # but staying there is the story.
+    # Only flag sustained streaks at 6+ months — short streaks are
+    # already covered by the zero-crossing signal.
+    sustained_min = 6 if freq != "daily" else 126
+    if len(recent_yoy) >= sustained_min and yoy is not None:
+        if yoy < 0:
+            neg_streak = 0
+            for y in reversed(recent_yoy):
+                if y < 0:
+                    neg_streak += 1
+                else:
+                    break
+            if neg_streak >= sustained_min:
+                unit = "d" if freq == "daily" else "mo"
+                signals.append(f"YoY negative {neg_streak}{unit}")
+        elif yoy > 0:
+            pos_streak = 0
+            for y in reversed(recent_yoy):
+                if y > 0:
+                    pos_streak += 1
+                else:
+                    break
+            # Only flag sustained positive if it recently crossed from negative
+            # (i.e., streak started within the recent window)
+            if pos_streak >= sustained_min and pos_streak < len(recent_yoy):
+                unit = "d" if freq == "daily" else "mo"
+                signals.append(f"YoY positive {pos_streak}{unit}")
+
+    # ── YoY at multi-year extreme ──────────────────────────
+    # Flag when YoY is at its most extreme level in 2+ years.
+    # "When was the last time it was this bad/good?" — if the answer
+    # is 2+ years ago, that's a signal.
+    all_dates = [r[0] for r in rows]
+    yoy_dated = [(d, data["yoy_pct"][d]) for d in all_dates
+                 if d in data["yoy_pct"]]
+    if len(yoy_dated) >= history_window and yoy is not None:
+        from datetime import datetime as _dt
+        min_gap_days = 730  # 2 years
+        try:
+            current_dt = _dt.strptime(latest_date, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            current_dt = None
+
+        if current_dt:
+            if yoy < 0:
+                # Find the most recent prior period with a YoY as low or lower
+                last_as_bad = None
+                for d, y in reversed(yoy_dated[:-1]):
+                    if y <= yoy:
+                        last_as_bad = d
+                        break
+                if last_as_bad is None:
+                    signals.append("YoY at all-time low")
+                else:
+                    try:
+                        gap = (current_dt - _dt.strptime(last_as_bad, "%Y-%m-%d")).days
+                        if gap >= min_gap_days:
+                            label = _dt.strptime(last_as_bad, "%Y-%m-%d").strftime("%b %Y")
+                            signals.append(f"YoY at lowest since {label}")
+                    except (ValueError, TypeError):
+                        pass
+            elif yoy > 0:
+                last_as_good = None
+                for d, y in reversed(yoy_dated[:-1]):
+                    if y >= yoy:
+                        last_as_good = d
+                        break
+                if last_as_good is None:
+                    signals.append("YoY at all-time high")
+                else:
+                    try:
+                        gap = (current_dt - _dt.strptime(last_as_good, "%Y-%m-%d")).days
+                        if gap >= min_gap_days:
+                            label = _dt.strptime(last_as_good, "%Y-%m-%d").strftime("%b %Y")
+                            signals.append(f"YoY at highest since {label}")
+                    except (ValueError, TypeError):
+                        pass
 
     return {
         "series_id": series_id,
