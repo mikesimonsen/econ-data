@@ -1,9 +1,9 @@
 {
-  "mortgage-rates": "2026-04-03T06:36:24",
-  "treasury-yields": "2026-04-03T06:36:24",
+  "mortgage-rates": "2026-04-03T07:00:36",
+  "treasury-yields": "2026-04-03T07:00:36",
   "ppi": "2026-03-26T11:32:54",
   "new-home-sales": "2026-03-26T11:32:54",
-  "jobless-claims": "2026-04-03T06:36:24",
+  "jobless-claims": "2026-04-03T07:00:36",
   "construction-spending": "2026-03-26T11:32:54",
   "cpi": "2026-03-26T11:32:54",
   "cpi-metro": "2026-03-26T11:32:54",
@@ -16,13 +16,13 @@
   "building-permits": "2026-03-28T08:10:26",
   "housing-under-construction": "2026-03-26T11:32:54",
   "housing-completions": "2026-03-26T11:32:54",
-  "unemployment": "2026-04-03T06:36:24",
-  "labor-force": "2026-04-03T06:36:24",
-  "construction-employment": "2026-04-03T06:36:24",
+  "unemployment": "2026-04-03T07:00:36",
+  "labor-force": "2026-04-03T07:00:36",
+  "construction-employment": "2026-04-03T07:00:36",
   "households": "2026-03-26T11:32:54",
-  "labor-quality": "2026-04-03T06:36:24",
+  "labor-quality": "2026-04-03T07:00:36",
   "mortgage-intent": "2026-03-30T08:35:59",
   "consumer-confidence": "2026-03-31T11:49:58",
   "mba-applications": "2026-04-02T08:40:33",
-  "oil": "2026-04-03T06:36:24"
+  "oil": "2026-04-03T07:00:36"
 }
