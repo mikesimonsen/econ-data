@@ -17,7 +17,7 @@ API_DELAY = 0.6  # seconds
 COOLDOWN_DAYS = {
     "daily": 0,       # always check
     "weekly": 4,      # wait 4 days after last observation
-    "monthly": 21,    # wait 3 weeks after last observation
+    "monthly": 28,    # wait ~1 month after last observation
     "quarterly": 70,  # wait ~10 weeks after last observation
 }
 
@@ -32,7 +32,7 @@ class Observation:
 
 def _detect_frequency(series_id: str) -> str:
     """Guess frequency from the series_id."""
-    if series_id.startswith("DGS"):
+    if series_id.startswith("DGS") or series_id in ("WTI_CRUDE",):
         return "daily"
     if series_id in ("ICSA", "IC4WSA", "CCSA", "CC4WSA", "IURSA"):
         return "weekly"

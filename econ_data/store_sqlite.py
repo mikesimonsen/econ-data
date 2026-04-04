@@ -177,6 +177,19 @@ def get_last_dates(db_path: Path = DB_PATH) -> dict:
     return {series_id: date_type.fromisoformat(d) for series_id, d in rows}
 
 
+def get_series_captured_today(db_path: Path = DB_PATH) -> set:
+    """Return set of series_ids that had observations captured today."""
+    from datetime import date as date_type
+    today = date_type.today().isoformat()
+    con = _connect(db_path)
+    rows = con.execute(
+        "SELECT DISTINCT series_id FROM observations WHERE captured_at LIKE ?",
+        (today + "%",),
+    ).fetchall()
+    con.close()
+    return {r[0] for r in rows}
+
+
 def get_export_log(db_path: Path = DB_PATH) -> dict:
     """Return {export_key: {"last_date": str, "exported_at": str}}."""
     con = _connect(db_path)

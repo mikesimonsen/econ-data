@@ -38,8 +38,14 @@ var GROUPS = [
   { file: "labor-force", tab: "Labor Force" },
   { file: "jobless-claims", tab: "Jobless Claims" },
   { file: "treasury-yields", tab: "Treasury Yields" },
+  { file: "oil", tab: "Oil" },
   { file: "mortgage-rates", tab: "Mortgage Rates" },
+  { file: "consumer-confidence", tab: "Consumer Confidence" },
+  { file: "mba-applications", tab: "MBA Purchase" },
+  { file: "mortgage-intent", tab: "Mortgage Intent" },
   { file: "construction-employment", tab: "Construction Employment" },
+  { file: "households", tab: "Households" },
+  { file: "labor-quality", tab: "Labor Quality" },
 ];
 
 // ── Main functions ───────────────────────────────────────────

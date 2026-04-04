@@ -2,14 +2,19 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from econ_data.calc_spread import compute_spread
 from econ_data.calculations import compute_all
 from econ_data.config import load, all_series, fred_series
 from econ_data.fetch import fetch_all
 from econ_data.fetch_bls import fetch_bls, build_series_map
+from econ_data.fetch_confboard import fetch_confboard
 from econ_data.fetch_mnd import fetch_mnd
+from econ_data.fetch_web import fetch_web
+from econ_data.fetch_altos import fetch_altos
+from econ_data.fetch_xactus import fetch_xactus
 from econ_data.store_sqlite import (
     get_last_dates, get_fetch_log, save, save_fetch_log, save_groups,
-    detect_and_save_revisions, get_recent_revisions,
+    detect_and_save_revisions, get_recent_revisions, get_series_captured_today,
 )
 from econ_data.briefing import generate_briefing
 from econ_data.daily_analysis import generate_daily_analysis
@@ -88,6 +93,41 @@ if __name__ == "__main__":
         if bls_result["new"]:
             save(bls_result["new"])
 
+    # Fetch Altos Research weekly inventory (drop-folder CSV)
+    altos_result = fetch_altos(last_dates=last_dates)
+    result["new"].extend(altos_result["new"])
+    result["counts"].update(altos_result["counts"])
+    if altos_result["new"]:
+        save(altos_result["new"])
+
+    # Fetch Xactus Mortgage Intent Index (drop-folder spreadsheets)
+    xactus_result = fetch_xactus(last_dates=last_dates)
+    result["new"].extend(xactus_result["new"])
+    result["counts"].update(xactus_result["counts"])
+    if xactus_result["new"]:
+        save(xactus_result["new"])
+
+    # Fetch web-scraped series (MBA Purchase Index, etc.)
+    web_result = fetch_web(last_dates=last_dates)
+    result["new"].extend(web_result["new"])
+    result["counts"].update(web_result["counts"])
+    if web_result["new"]:
+        save(web_result["new"])
+
+    # Fetch Conference Board Consumer Confidence (scraped from MacroMicro.me)
+    cb_result = fetch_confboard(last_dates=last_dates)
+    result["new"].extend(cb_result["new"])
+    result["counts"].update(cb_result["counts"])
+    if cb_result["new"]:
+        save(cb_result["new"])
+
+    # Compute mortgage rate spread (derived from MND + DGS10)
+    spread_result = compute_spread(last_dates=get_last_dates())
+    result["new"].extend(spread_result["new"])
+    result["counts"].update(spread_result["counts"])
+    if spread_result["new"]:
+        save(spread_result["new"])
+
     counts = result["counts"]
 
     updated, current, errors = [], [], []
@@ -124,7 +164,7 @@ if __name__ == "__main__":
     log("Generating data summary...")
     summary = generate_summary(cfg)
     report = format_summary(summary)
-    updated_ids = {sid for sid, _, _ in updated}
+    updated_ids = get_series_captured_today()
 
     summary_dir = Path("summaries")
     summary_dir.mkdir(exist_ok=True)

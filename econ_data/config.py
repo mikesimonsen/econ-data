@@ -31,6 +31,32 @@ def percent_series(cfg: dict) -> set:
     return result
 
 
+def inverted_series(cfg: dict) -> set:
+    """Return set of series IDs where rising = economic weakness."""
+    result = set()
+    for s in cfg.get("series", []):
+        if s.get("inverted"):
+            result.add(s["id"])
+    for group in cfg.get("groups", {}).values():
+        for s in group["series"]:
+            if s.get("inverted"):
+                result.add(s["id"])
+    return result
+
+
+def seasonal_series(cfg: dict) -> set:
+    """Return set of series IDs that need seasonal adjustment."""
+    result = set()
+    for group in cfg.get("groups", {}).values():
+        if group.get("seasonal"):
+            for s in group["series"]:
+                result.add(s["id"])
+    for s in cfg.get("series", []):
+        if s.get("seasonal"):
+            result.add(s["id"])
+    return result
+
+
 def fred_series(cfg: dict) -> list:
     """Return (series_id, name) pairs for FRED-sourced series only."""
     result = [(s["id"], s["name"]) for s in cfg.get("series", [])

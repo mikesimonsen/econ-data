@@ -42,6 +42,10 @@ _GROUP_SEARCH_TAGS = {
     "treasury-yields": "rates bonds interest",
     "mortgage-rates": "rates mortgage interest housing",
     "households": "housing homeownership vacancy",
+    "mortgage-spread": "spread mortgage treasury rates housing",
+    "altos-inventory": "housing inventory listings supply altos",
+    "altos-new-listings": "housing new listings supply altos",
+    "altos-new-pending": "housing pending sales contracts altos",
 }
 
 _FAVICON_CACHE = None
@@ -278,11 +282,19 @@ def _release_dates(db_path: Path = DB_PATH) -> dict:
 
 
 def _load_analysis(today: str) -> str:
-    """Load today's LLM daily analysis markdown, returning just the narrative."""
+    """Load today's LLM daily analysis markdown, returning just the narrative.
+
+    Falls back to the most recent analysis file if today's doesn't exist.
+    """
     import re
-    analysis_path = Path(__file__).parent.parent / "summaries" / f"daily analysis {today}.md"
+    summaries_dir = Path(__file__).parent.parent / "summaries"
+    analysis_path = summaries_dir / f"daily analysis {today}.md"
     if not analysis_path.exists():
-        return ""
+        # Find the most recent analysis file
+        candidates = sorted(summaries_dir.glob("daily analysis *.md"), reverse=True)
+        if not candidates:
+            return ""
+        analysis_path = candidates[0]
     text = analysis_path.read_text()
     # Strip the title line and the appended raw Signals/Summary sections
     parts = text.split("\n---\n", 1)
@@ -414,6 +426,8 @@ def _build_name_map(summary: dict) -> dict:
         "30-year fixed": "MND_30YR_FIXED", "30-year mortgage": "MND_30YR_FIXED",
         "median duration": "UEMPMED",
         "long-term joblessness": "UEMP27OV", "27+ weeks": "UEMP27OV",
+        "mortgage spread": "SPREAD_30Y_10Y", "rate spread": "SPREAD_30Y_10Y",
+        "Altos inventory": "ALTOS_INVENTORY", "total inventory": "ALTOS_INVENTORY",
     }
     name_to_sid.update(aliases)
     return name_to_sid
@@ -520,7 +534,7 @@ def _render_page(**ctx) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="data:image/png;base64,{_favicon_b64()}">
-<title>Econ Data Briefing — {today}</title>
+<title>Simonsen Daily Briefing — {today}</title>
 <style>
 {_css()}
 </style>
@@ -528,7 +542,7 @@ def _render_page(**ctx) -> str:
 <body>
 
 <header>
-  <h1>Econ Data Briefing</h1>
+  <h1>Simonsen Daily Briefing</h1>
   <div class="date">{today}</div>
 </header>
 
@@ -563,6 +577,7 @@ var chartCsvData = {chart_csv_json};
 var releaseDates = {release_dates_json};
 {_js()}
 </script>
+<script data-goatcounter="https://mikesimonsen.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>"""
 
@@ -613,6 +628,20 @@ def _render_revision_notes(series_id: str, revisions_by_series: dict) -> str:
     )
 
 
+def _revision_direction_tag(series_id: str, revisions_by_series: dict) -> str:
+    """Return a 'revised higher' or 'revised lower' signal tag if revisions exist."""
+    revs = revisions_by_series.get(series_id, [])
+    if not revs:
+        return ""
+    # Use the most recent revision to determine direction
+    latest = max(revs, key=lambda r: r["date"])
+    if latest["new_value"] > latest["old_value"]:
+        return '<span class="signal-tag revised-higher">revised higher</span> '
+    elif latest["new_value"] < latest["old_value"]:
+        return '<span class="signal-tag revised-lower">revised lower</span> '
+    return ""
+
+
 def _search_terms(series_id: str, name: str, group_id: str,
                    group_name: str) -> str:
     """Build a lowercase search string for a series row."""
@@ -659,10 +688,11 @@ def _render_series_table(series_list, ctx, show_signals=True) -> str:
                 )
 
             freq = a.get("frequency", "monthly")
-            date_str = a["latest_date"] if freq == "daily" else a["latest_date"][:7]
+            date_str = a["latest_date"] if freq in ("daily", "weekly") else a["latest_date"][:7]
 
             revision_html = _render_revision_notes(sid, revisions_by_series)
             has_rev = ' has-revision' if revision_html else ''
+            rev_tag = _revision_direction_tag(sid, revisions_by_series)
 
             rows.append(f"""
             <tr class="series-row {fresh}{has_rev}" id="row-{sid}" data-search="{search}" data-sid="{sid}" onclick="toggleDetail('{sid}')">
@@ -676,7 +706,7 @@ def _render_series_table(series_list, ctx, show_signals=True) -> str:
               <td class="chg-col">{_trend_arrow(a)} {_format_change(a['period_pct'], is_pct)}</td>
               <td class="chg-col">{_format_change(a['yoy_pct'], is_pct)}</td>
               <td class="release-col">{released}</td>
-              <td class="signal-col">{signal_tags}</td>
+              <td class="signal-col">{rev_tag}{signal_tags}</td>
               <td class="export-col"><button class="btn-export" onclick="event.stopPropagation(); downloadCsv('{sid}')">CSV</button></td>
             </tr>""")
             if revision_html:
@@ -1106,7 +1136,7 @@ def _render_all_groups(ctx) -> str:
                 )
 
             freq = a.get("frequency", "monthly")
-            date_str = a["latest_date"] if freq == "daily" else a["latest_date"][:7] if a["latest_date"] else ""
+            date_str = a["latest_date"] if freq in ("daily", "weekly") else a["latest_date"][:7] if a["latest_date"] else ""
 
             trend = ""
             if a["trend_dir"] and a["trend_periods"] > 1:
@@ -1381,6 +1411,8 @@ main { padding: 24px 32px; max-width: 1400px; }
 .signal-extreme { background: rgba(248, 81, 73, 0.25); color: var(--red); font-weight: 600; }
 .signal-sustained { background: rgba(210, 153, 34, 0.15); color: var(--amber); }
 .signal-info { background: rgba(139, 148, 158, 0.15); color: var(--text-muted); }
+.revised-higher { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+.revised-lower { background: rgba(248, 81, 73, 0.2); color: var(--red); }
 
 .detail-row td {
   padding: 0 !important;

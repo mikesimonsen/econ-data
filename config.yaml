@@ -133,10 +133,29 @@ groups:
         name: "Hires: Total Nonfarm"
       - id: JTSTSL
         name: "Total Separations: Total Nonfarm"
+        inverted: true
       - id: JTSQUL
         name: "Quits: Total Nonfarm"
       - id: JTSLDL
         name: "Layoffs and Discharges: Total Nonfarm"
+        inverted: true
+      - id: JTSJOR
+        name: "Job Openings Rate"
+        units: percent
+      - id: JTSHIR
+        name: "Hires Rate"
+        units: percent
+      - id: JTSTSR
+        name: "Total Separations Rate"
+        units: percent
+        inverted: true
+      - id: JTSQUR
+        name: "Quits Rate"
+        units: percent
+      - id: JTSLDR
+        name: "Layoffs and Discharges Rate"
+        units: percent
+        inverted: true
 
   case-shiller:
     name: "S&P/Case-Shiller Home Price Index (Seasonally Adjusted)"
@@ -214,6 +233,7 @@ groups:
         name: "Housing Inventory"
       - id: HOSSUPUSM673N
         name: "Months Supply of Inventory"
+        inverted: true
 
   existing-home-sales-nsa:
     name: "NAR Existing Home Sales (Not Seasonally Adjusted)"
@@ -245,6 +265,7 @@ groups:
         name: "Housing Inventory"
       - id: HOSSUPUSM673N
         name: "Months Supply of Inventory"
+        inverted: true
 
   housing-starts:
     name: "Housing Starts (Census, SAAR)"
@@ -319,6 +340,7 @@ groups:
         name: "Average Sales Price - New Homes"
       - id: MSACSR
         name: "Months Supply of New Houses"
+        inverted: true
       - id: HNFSEPUSSA
         name: "New Houses For Sale (SAAR)"
 
@@ -352,37 +374,50 @@ groups:
       - id: UNRATE
         name: "U-3 Unemployment Rate (Official)"
         units: percent
+        inverted: true
       - id: U1RATE
         name: "U-1 Unemployed 15+ Weeks as % of Labor Force"
         units: percent
+        inverted: true
       - id: U2RATE
         name: "U-2 Job Losers as % of Labor Force"
         units: percent
+        inverted: true
       - id: U4RATE
         name: "U-4 + Discouraged Workers"
         units: percent
+        inverted: true
       - id: U5RATE
         name: "U-5 + Other Marginally Attached"
         units: percent
+        inverted: true
       - id: U6RATE
         name: "U-6 + Part-Time for Economic Reasons"
         units: percent
+        inverted: true
       # Unemployment by duration
       - id: UEMPLT5
         name: "Unemployed Less Than 5 Weeks (000s)"
+        inverted: true
       - id: UEMP5TO14
         name: "Unemployed 5-14 Weeks (000s)"
+        inverted: true
       - id: UEMP15T26
         name: "Unemployed 15-26 Weeks (000s)"
+        inverted: true
       - id: UEMP27OV
         name: "Unemployed 27+ Weeks (000s)"
+        inverted: true
       # Levels and duration
       - id: UNEMPLOY
         name: "Total Unemployed (000s)"
+        inverted: true
       - id: UEMPMED
         name: "Median Duration of Unemployment (Weeks)"
+        inverted: true
       - id: UEMPMEAN
         name: "Average Duration of Unemployment (Weeks)"
+        inverted: true
 
   labor-force:
     name: "Labor Force & Employment (BLS)"
@@ -420,30 +455,55 @@ groups:
         name: "Temp Help Services Employment (000s)"
       - id: IC4WSA
         name: "Initial Claims 4-Week Moving Average"
-      - id: JTSLDR
-        name: "Layoffs and Discharges Rate"
-        units: percent
 
   jobless-claims:
     name: "Jobless Claims (Weekly, SA)"
     series:
       - id: ICSA
         name: "Initial Claims"
+        inverted: true
       - id: IC4WSA
         name: "Initial Claims - 4 Week Average"
+        inverted: true
       - id: CCSA
         name: "Continuing Claims"
+        inverted: true
       - id: CC4WSA
         name: "Continuing Claims - 4 Week Average"
+        inverted: true
       - id: IURSA
         name: "Insured Unemployment Rate"
         units: percent
+        inverted: true
 
   treasury-yields:
     name: "Treasury Yields (Daily)"
+    source: web
     series:
       - id: DGS10
         name: "10-Year Treasury Yield"
+        units: percent
+
+  oil:
+    name: "Oil Prices (Daily)"
+    source: web
+    series:
+      - id: WTI_CRUDE
+        name: "WTI Crude Oil Futures"
+        units: dollars per barrel
+
+  mortgage-spread:
+    name: "Mortgage Rate Spread (30Y Fixed - 10Y Treasury)"
+    source: calculated
+    series:
+      - id: SPREAD_30Y_10Y
+        name: "Mortgage Rate Spread (30Y - 10Y)"
+        units: percent
+      - id: SPREAD_30Y_10Y_WK
+        name: "Mortgage Rate Spread Weekly Avg"
+        units: percent
+      - id: SPREAD_30Y_10Y_4WK
+        name: "Mortgage Rate Spread 4-Week Avg"
         units: percent
 
   mortgage-rates:
@@ -468,6 +528,68 @@ groups:
       - id: MND_30YR_VA
         name: "30-Year VA Mortgage Rate"
         units: percent
+
+  consumer-confidence:
+    name: "Consumer Confidence (Conference Board)"
+    source: confboard
+    series:
+      - id: CB_CCI
+        name: "Consumer Confidence Index (Conference Board)"
+        units: "index (1985=100)"
+      - id: CB_CCI_PRESENT
+        name: "Consumer Confidence - Present Situation"
+        units: "index (1985=100)"
+      - id: CB_CCI_EXPECT
+        name: "Consumer Confidence - Expectations"
+        units: "index (1985=100)"
+
+  mba-applications:
+    name: "MBA Mortgage Applications"
+    source: web
+    series:
+      - id: MBA_PURCHASE
+        name: "MBA Purchase Index"
+        units: "index (Mar 1990=100)"
+
+  mortgage-intent:
+    name: "Mortgage Intent Index (Xactus)"
+    source: xactus
+    series:
+      - id: XACTUS_MII
+        name: "Xactus Mortgage Intent Index"
+        units: index
+
+  altos-inventory:
+    name: "Altos Research Weekly Inventory"
+    source: altos
+    seasonal: true
+    series:
+      - id: ALTOS_INVENTORY
+        name: "Altos Total Inventory (SFR + Condo)"
+
+  altos-new-listings:
+    name: "Altos Research New Listings"
+    source: altos
+    seasonal: true
+    series:
+      - id: ALTOS_NEW_LISTINGS
+        name: "Altos New Listings (SFR + Condo)"
+      - id: ALTOS_NEW_LISTINGS_4WK
+        name: "Altos New Listings 4-Week Avg (SFR + Condo)"
+      - id: ALTOS_NEW_LISTINGS_13WK
+        name: "Altos New Listings 13-Week Avg (SFR + Condo)"
+
+  altos-new-pending:
+    name: "Altos New Pending Sales"
+    source: altos
+    seasonal: true
+    series:
+      - id: ALTOS_NEW_PENDING
+        name: "Altos New Pending Sales (SFR + Condo)"
+      - id: ALTOS_NEW_PENDING_4WK
+        name: "Altos New Pending Sales 4-Week Avg (SFR + Condo)"
+      - id: ALTOS_NEW_PENDING_13WK
+        name: "Altos New Pending Sales 13-Week Avg (SFR + Condo)"
 
   construction-employment:
     name: "Construction Employment (BLS)"

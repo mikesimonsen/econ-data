@@ -3,11 +3,18 @@ Compute derived time series from raw observations.
 
 Calculation types:
   period_pct — percentage change from the prior observation (for level series)
-  yoy_pct   — percentage change from the same month one year earlier (for level series)
+  yoy_pct   — percentage change from ~1 year earlier (for level series)
   period_pp  — percentage-point difference from the prior observation (for percent/rate series)
-  yoy_pp     — percentage-point difference from the same month one year earlier (for percent/rate series)
+  yoy_pp     — percentage-point difference from ~1 year earlier (for percent/rate series)
+
+YoY matching is frequency-agnostic: for each observation, we find the
+nearest observation to the date exactly one year prior.  A tolerance of
+half the series' median observation gap ensures we don't match across
+gaps that are too large (e.g. a 6-month hiatus).
 """
+import bisect
 import sqlite3
+from datetime import date as date_type, timedelta
 from pathlib import Path
 
 from econ_data.config import load, percent_series
@@ -53,6 +60,41 @@ def compute_all(db_path: Path = DB_PATH) -> int:
     return total
 
 
+def _median_gap_days(rows) -> int:
+    """Return the median gap in days between consecutive observations."""
+    if len(rows) < 2:
+        return 30
+    gaps = []
+    for i in range(1, min(len(rows), 50)):  # sample recent observations
+        d1 = date_type.fromisoformat(rows[-(i + 1)][0])
+        d2 = date_type.fromisoformat(rows[-i][0])
+        gaps.append((d2 - d1).days)
+    gaps.sort()
+    return gaps[len(gaps) // 2]
+
+
+def _find_yoy_match(dates: list[date_type], values: list[float],
+                    target: date_type, tolerance_days: int):
+    """Find the observation nearest to target within tolerance.
+
+    Uses binary search for efficiency. Returns the value or None.
+    """
+    idx = bisect.bisect_left(dates, target)
+
+    best_val = None
+    best_gap = tolerance_days + 1
+
+    # Check the candidate at idx and idx-1 (the two nearest)
+    for i in (idx - 1, idx):
+        if 0 <= i < len(dates):
+            gap = abs((dates[i] - target).days)
+            if gap < best_gap:
+                best_gap = gap
+                best_val = values[i]
+
+    return best_val
+
+
 def _compute_period_pct(con, series_id, rows):
     """Percentage change from prior observation."""
     calcs = []
@@ -71,18 +113,20 @@ def _compute_period_pct(con, series_id, rows):
 
 
 def _compute_yoy_pct(con, series_id, rows):
-    """Percentage change from the same month one year ago."""
-    by_month = {}
-    for date_str, value in rows:
-        y, m = date_str[:4], date_str[5:7]
-        by_month[(int(y), int(m))] = (date_str, value)
+    """Percentage change from ~1 year ago (nearest observation)."""
+    if len(rows) < 2:
+        return 0
+
+    dates = [date_type.fromisoformat(r[0]) for r in rows]
+    values = [r[1] for r in rows]
+    tolerance = max(_median_gap_days(rows), 7)  # at least 7 days
 
     calcs = []
-    for date_str, value in rows:
-        y, m = int(date_str[:4]), int(date_str[5:7])
-        prev = by_month.get((y - 1, m))
-        if prev and prev[1] != 0:
-            pct = (value - prev[1]) / prev[1] * 100
+    for i, (date_str, value) in enumerate(rows):
+        target = _year_ago(dates[i])
+        prev_val = _find_yoy_match(dates, values, target, tolerance)
+        if prev_val is not None and prev_val != 0:
+            pct = (value - prev_val) / prev_val * 100
             calcs.append((series_id, "yoy_pct", date_str, round(pct, 2)))
 
     con.executemany(
@@ -109,18 +153,20 @@ def _compute_period_pp(con, series_id, rows):
 
 
 def _compute_yoy_pp(con, series_id, rows):
-    """Percentage-point difference from the same month one year ago."""
-    by_month = {}
-    for date_str, value in rows:
-        y, m = date_str[:4], date_str[5:7]
-        by_month[(int(y), int(m))] = (date_str, value)
+    """Percentage-point difference from ~1 year ago (nearest observation)."""
+    if len(rows) < 2:
+        return 0
+
+    dates = [date_type.fromisoformat(r[0]) for r in rows]
+    values = [r[1] for r in rows]
+    tolerance = max(_median_gap_days(rows), 7)
 
     calcs = []
-    for date_str, value in rows:
-        y, m = int(date_str[:4]), int(date_str[5:7])
-        prev = by_month.get((y - 1, m))
-        if prev is not None:
-            diff = value - prev[1]
+    for i, (date_str, value) in enumerate(rows):
+        target = _year_ago(dates[i])
+        prev_val = _find_yoy_match(dates, values, target, tolerance)
+        if prev_val is not None:
+            diff = value - prev_val
             calcs.append((series_id, "yoy_pp", date_str, round(diff, 2)))
 
     con.executemany(
@@ -128,3 +174,12 @@ def _compute_yoy_pp(con, series_id, rows):
         calcs,
     )
     return len(calcs)
+
+
+def _year_ago(d: date_type) -> date_type:
+    """Return the date exactly 1 year before d, handling leap years."""
+    try:
+        return d.replace(year=d.year - 1)
+    except ValueError:
+        # Feb 29 -> Feb 28
+        return d.replace(year=d.year - 1, day=d.day - 1)

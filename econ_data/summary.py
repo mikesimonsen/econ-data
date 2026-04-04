@@ -5,11 +5,13 @@ import sqlite3
 import statistics
 from pathlib import Path
 
-from econ_data.config import load as load_config, percent_series
+from econ_data.config import load as load_config, percent_series, seasonal_series
+from econ_data.seasonal import compute_seasonal_factors, sa_period_changes
 from econ_data.store_sqlite import DB_PATH
 
-# Cached set of series IDs with percent units
+# Cached config lookups
 _PERCENT_IDS = None
+_SEASONAL_IDS = None
 
 
 def _get_percent_ids():
@@ -18,9 +20,18 @@ def _get_percent_ids():
         _PERCENT_IDS = percent_series(load_config())
     return _PERCENT_IDS
 
+
+def _get_seasonal_ids():
+    global _SEASONAL_IDS
+    if _SEASONAL_IDS is None:
+        _SEASONAL_IDS = seasonal_series(load_config())
+    return _SEASONAL_IDS
+
 # Windows by frequency (observation counts approximating real-time spans)
 MONTHLY_TREND = 6        # 6 months
 MONTHLY_HISTORY = 24     # 2 years
+WEEKLY_TREND = 13        # ~3 months
+WEEKLY_HISTORY = 104     # ~2 years
 DAILY_TREND = 126        # ~6 months of trading days
 DAILY_HISTORY = 504      # ~2 years of trading days
 UNUSUAL_THRESHOLD = 1.5  # std devs from mean to flag as unusual
@@ -34,7 +45,11 @@ def _detect_frequency(rows: list) -> str:
     dates = [date_type.fromisoformat(r[0]) if isinstance(r[0], str) else r[0] for r in rows[-20:]]
     gaps = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
     median_gap = sorted(gaps)[len(gaps) // 2]
-    return "daily" if median_gap <= 5 else "monthly"
+    if median_gap <= 5:
+        return "daily"
+    if median_gap <= 10:
+        return "weekly"
+    return "monthly"
 
 
 def _get_series_data(series_id: str, db_path: Path = DB_PATH) -> dict:
@@ -59,9 +74,20 @@ def _get_series_data(series_id: str, db_path: Path = DB_PATH) -> dict:
         (series_id, yoy_type),
     ).fetchall())
 
+    # Get captured_at for the latest observation
+    captured_at = None
+    if rows:
+        row = con.execute(
+            "SELECT captured_at FROM observations WHERE series_id = ? AND date = ?",
+            (series_id, rows[-1][0]),
+        ).fetchone()
+        if row and row[0]:
+            captured_at = row[0][:10]  # date portion only
+
     con.close()
 
-    return {"rows": rows, "period_pct": period_pct, "yoy_pct": yoy_pct, "is_percent": is_pct}
+    return {"rows": rows, "period_pct": period_pct, "yoy_pct": yoy_pct,
+            "is_percent": is_pct, "captured_at": captured_at}
 
 
 def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
@@ -82,11 +108,16 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
             "trend_dir": None, "trend_periods": 0,
             "frequency": "monthly",
             "signals": [],
+            "captured_at": data.get("captured_at"),
         }
 
     freq = _detect_frequency(rows)
-    trend_window = DAILY_TREND if freq == "daily" else MONTHLY_TREND
-    history_window = DAILY_HISTORY if freq == "daily" else MONTHLY_HISTORY
+    if freq == "daily":
+        trend_window, history_window = DAILY_TREND, DAILY_HISTORY
+    elif freq == "weekly":
+        trend_window, history_window = WEEKLY_TREND, WEEKLY_HISTORY
+    else:
+        trend_window, history_window = MONTHLY_TREND, MONTHLY_HISTORY
 
     latest_date = rows[-1][0]
     latest_value = rows[-1][1]
@@ -105,6 +136,22 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
 
     # Recent YoY values for acceleration/deceleration
     recent_yoy = [data["yoy_pct"][d] for d in recent_dates if d in data["yoy_pct"]]
+
+    # ── Seasonal adjustment for signal detection ───────────
+    # For seasonal series, compute SA period changes so signals fire
+    # relative to seasonal norms (not raw changes).  Raw values are
+    # still used for display and trend direction.
+    signal_period = period
+    signal_recent = recent_changes
+    signal_history = history_changes
+
+    if series_id in _get_seasonal_ids():
+        factors = compute_seasonal_factors(series_id, db_path)
+        if factors:
+            sa_map = sa_period_changes(rows, factors)
+            signal_period = sa_map.get(latest_date, period)
+            signal_recent = [sa_map[d] for d in recent_dates if d in sa_map]
+            signal_history = [sa_map[d] for d in history_dates if d in sa_map]
 
     signals = []
 
@@ -131,24 +178,24 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
             else:
                 break
 
-    # ── Trend reversal ──────────────────────────────────────
-    if len(recent_changes) >= 3 and period is not None:
-        prior_changes = recent_changes[:-1]
+    # ── Trend reversal (uses SA changes for seasonal series) ──
+    if len(signal_recent) >= 3 and signal_period is not None:
+        prior_changes = signal_recent[:-1]
         if len(prior_changes) >= 2:
             prior_positive = sum(1 for c in prior_changes[-3:] if c > 0)
             prior_negative = sum(1 for c in prior_changes[-3:] if c < 0)
 
-            if prior_negative >= 2 and period > 0:
+            if prior_negative >= 2 and signal_period > 0:
                 signals.append("Reversal: uptick breaks recent decline")
-            elif prior_positive >= 2 and period < 0:
+            elif prior_positive >= 2 and signal_period < 0:
                 signals.append("Reversal: downtick breaks recent rise")
 
-    # ── Unusual move ────────────────────────────────────────
-    if len(history_changes) >= 6 and period is not None:
-        mean_ch = statistics.mean(history_changes)
-        stdev_ch = statistics.stdev(history_changes)
+    # ── Unusual move (uses SA changes for seasonal series) ──
+    if len(signal_history) >= 6 and signal_period is not None:
+        mean_ch = statistics.mean(signal_history)
+        stdev_ch = statistics.stdev(signal_history)
         if stdev_ch > 0:
-            z_score = (period - mean_ch) / stdev_ch
+            z_score = (signal_period - mean_ch) / stdev_ch
             if abs(z_score) >= UNUSUAL_THRESHOLD:
                 direction = "jump" if z_score > 0 else "drop"
                 signals.append(f"Unusual {direction} ({z_score:+.1f} std devs)")
@@ -162,12 +209,12 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
         elif prev_yoy < 0 and curr_yoy > 0:
             signals.append("YoY turned positive (was negative)")
 
-    if len(recent_changes) >= 2:
-        prev_ch = recent_changes[-2]
-        curr_ch = recent_changes[-1]
-        if prev_ch > 0 and curr_ch < 0:
+    if len(signal_recent) >= 2:
+        prev_ch = signal_recent[-2]
+        curr_ch = signal_recent[-1]
+        if prev_ch > 0 and curr_ch < 0 and "Reversal: downtick breaks recent rise" not in signals:
             signals.append("Period change turned negative (was positive)")
-        elif prev_ch < 0 and curr_ch > 0:
+        elif prev_ch < 0 and curr_ch > 0 and "Reversal: uptick breaks recent decline" not in signals:
             signals.append("Period change turned positive (was negative)")
 
     # ── YoY acceleration/deceleration ───────────────────────
@@ -195,29 +242,31 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
     # but staying there is the story.
     # Only flag sustained streaks at 6+ months — short streaks are
     # already covered by the zero-crossing signal.
-    sustained_min = 6 if freq != "daily" else 126
-    if len(recent_yoy) >= sustained_min and yoy is not None:
+    # Uses full YoY history (not the trend window) to count the actual streak.
+    sustained_min = {"daily": 126, "weekly": 26, "monthly": 6}.get(freq, 6)
+    all_yoy = [data["yoy_pct"][r[0]] for r in rows if r[0] in data["yoy_pct"]]
+    if len(all_yoy) >= sustained_min and yoy is not None:
         if yoy < 0:
             neg_streak = 0
-            for y in reversed(recent_yoy):
+            for y in reversed(all_yoy):
                 if y < 0:
                     neg_streak += 1
                 else:
                     break
             if neg_streak >= sustained_min:
-                unit = "d" if freq == "daily" else "mo"
+                unit = {"daily": "d", "weekly": "wk", "monthly": "mo"}.get(freq, "mo")
                 signals.append(f"YoY negative {neg_streak}{unit}")
         elif yoy > 0:
             pos_streak = 0
-            for y in reversed(recent_yoy):
+            for y in reversed(all_yoy):
                 if y > 0:
                     pos_streak += 1
                 else:
                     break
             # Only flag sustained positive if it recently crossed from negative
             # (i.e., streak started within the recent window)
-            if pos_streak >= sustained_min and pos_streak < len(recent_yoy):
-                unit = "d" if freq == "daily" else "mo"
+            if pos_streak >= sustained_min and pos_streak < len(all_yoy):
+                unit = {"daily": "d", "weekly": "wk", "monthly": "mo"}.get(freq, "mo")
                 signals.append(f"YoY positive {pos_streak}{unit}")
 
     # ── YoY at multi-year extreme ──────────────────────────
@@ -282,6 +331,7 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
         "frequency": freq,
         "signals": signals,
         "is_percent": data.get("is_percent", False),
+        "captured_at": data.get("captured_at"),
     }
 
 
@@ -348,8 +398,9 @@ def generate_summary(cfg: dict, db_path: Path = DB_PATH) -> dict:
     Analyze all series in the config and return a structured summary.
     Returns {"standalone": [analysis...], "groups": {group_id: {"name":..., "series": [analysis...]}}}
     """
-    from econ_data.config import all_series
+    from econ_data.config import all_series, inverted_series
 
+    inverted = inverted_series(cfg)
     standalone = cfg.get("series", [])
     groups = cfg.get("groups", {})
 
@@ -361,13 +412,17 @@ def generate_summary(cfg: dict, db_path: Path = DB_PATH) -> dict:
     result_standalone = []
     for s in standalone:
         if s["id"] not in grouped_ids:
-            result_standalone.append(analyze_series(s["id"], s["name"], db_path))
+            a = analyze_series(s["id"], s["name"], db_path)
+            a["inverted"] = s["id"] in inverted
+            result_standalone.append(a)
 
     result_groups = {}
     for gid, gdata in groups.items():
         analyses = []
         for s in gdata["series"]:
-            analyses.append(analyze_series(s["id"], s["name"], db_path))
+            a = analyze_series(s["id"], s["name"], db_path)
+            a["inverted"] = s["id"] in inverted
+            analyses.append(a)
         _detect_group_outliers(analyses)
         result_groups[gid] = {"name": gdata["name"], "series": analyses}
 
@@ -405,12 +460,11 @@ def filter_signals(summary: dict) -> dict:
 
 
 def format_signals_by_recency(summary: dict, updated_series: set,
-                              recent_days: int = 60) -> str:
+                              recent_days: int = 7) -> str:
     """Format signals split into 'Updated Today' and 'Updated This Week' sections.
 
     updated_series: set of series_ids that received new data in this run.
-    recent_days: how far back to look for "this week" bucket. Default 60 days
-        to capture recent monthly releases (e.g. Feb data released in March).
+    recent_days: how far back to look for "this week" bucket based on captured_at.
     """
     from datetime import date, timedelta
 
@@ -419,6 +473,11 @@ def format_signals_by_recency(summary: dict, updated_series: set,
     today_groups = {}
     week_groups = {}
 
+    def _is_this_week(a):
+        """Check if a series was captured within the recent window."""
+        captured = a.get("captured_at") or ""
+        return captured >= cutoff and a["series_id"] not in updated_series
+
     # Process standalone
     for a in summary.get("standalone", []):
         if not a["signals"]:
@@ -426,7 +485,7 @@ def format_signals_by_recency(summary: dict, updated_series: set,
         if a["series_id"] in updated_series:
             today_groups.setdefault("_standalone", {"name": "", "series": []})
             today_groups["_standalone"]["series"].append(a)
-        elif a.get("latest_date", "") >= cutoff:
+        elif _is_this_week(a):
             week_groups.setdefault("_standalone", {"name": "", "series": []})
             week_groups["_standalone"]["series"].append(a)
 
@@ -439,7 +498,7 @@ def format_signals_by_recency(summary: dict, updated_series: set,
                 if gid not in today_groups:
                     today_groups[gid] = {"name": gdata["name"], "series": []}
                 today_groups[gid]["series"].append(a)
-            elif a.get("latest_date", "") >= cutoff:
+            elif _is_this_week(a):
                 if gid not in week_groups:
                     week_groups[gid] = {"name": gdata["name"], "series": []}
                 week_groups[gid]["series"].append(a)
@@ -460,7 +519,7 @@ def format_signals_by_recency(summary: dict, updated_series: set,
         lines.append("  ┌─────────────────────────────┐")
         lines.append("  │     UPDATED THIS WEEK        │")
         lines.append("  └─────────────────────────────┘")
-        lines.extend(_format_group_block(week_groups))
+        lines.extend(_format_group_block(week_groups, show_captured=True))
 
     if not today_groups and not week_groups:
         lines.append("  No signals today or this week.")
@@ -468,14 +527,22 @@ def format_signals_by_recency(summary: dict, updated_series: set,
     return "\n".join(lines)
 
 
-def _format_group_block(groups: dict) -> list:
+def _format_group_block(groups: dict, show_captured=False) -> list:
     """Format a dict of groups into output lines."""
     lines = []
     for gid, gdata in groups.items():
         if gid != "_standalone":
+            header = gdata['name']
+            if show_captured:
+                # Use the most common captured_at date across the group's series
+                dates = [a.get("captured_at") for a in gdata["series"] if a.get("captured_at")]
+                if dates:
+                    from collections import Counter
+                    most_common = Counter(dates).most_common(1)[0][0]
+                    header += f"  (captured {most_common})"
             lines.append("")
-            lines.append(f"  {gdata['name']}")
-            lines.append(f"  {'─' * len(gdata['name'])}")
+            lines.append(f"  {header}")
+            lines.append(f"  {'─' * len(header)}")
         for a in gdata["series"]:
             lines.extend(_format_series(a))
     return lines
@@ -515,26 +582,33 @@ def _format_series(a: dict) -> list:
         lines.append(f"    {a['series_id']:<16} No data")
         return lines
 
-    # Arrow for period direction
+    inverted = a.get("inverted", False)
+
+    # Arrow for period direction — flipped for inverted series
+    # so the LLM sees economic direction, not arithmetic direction
     if a["period_pct"] is not None:
         if a["period_pct"] > 0:
-            arrow = "↑"
+            arrow = "▼ WORSE" if inverted else "↑"
         elif a["period_pct"] < 0:
-            arrow = "↓"
+            arrow = "▲ BETTER" if inverted else "↓"
         else:
             arrow = "→"
     else:
         arrow = " "
 
-    # Trend description
+    # Trend description — use economic framing for inverted series
     trend = ""
     freq = a.get("frequency", "monthly")
     if a["trend_dir"] and a["trend_periods"] > 1:
-        unit = "d" if freq == "daily" else "mo"
-        trend = f"{a['trend_dir']} {a['trend_periods']}{unit}"
+        unit = {"daily": "d", "weekly": "wk", "monthly": "mo"}.get(freq, "mo")
+        if inverted:
+            econ_dir = "worsening" if a["trend_dir"] == "rising" else "improving"
+            trend = f"{econ_dir} {a['trend_periods']}{unit}"
+        else:
+            trend = f"{a['trend_dir']} {a['trend_periods']}{unit}"
 
-    # Build the line — full date for daily, YYYY-MM for monthly
-    date_str = a["latest_date"] if freq == "daily" else a["latest_date"][:7]
+    # Build the line — full date for daily/weekly, YYYY-MM for monthly
+    date_str = a["latest_date"] if freq in ("daily", "weekly") else a["latest_date"][:7]
     val = _format_value(a["latest_value"])
     is_pct = a.get("is_percent", False)
     pch = _format_pp(a["period_pct"]) if is_pct else _format_pct(a["period_pct"])
