@@ -147,6 +147,10 @@ def _format_change(val, is_pct=False):
 def _signal_class(signal: str) -> str:
     """Map a signal string to a CSS class."""
     s = signal.lower()
+    if "beat" in s or "hotter" in s:
+        return "signal-beat"
+    if "missed" in s or "cooler" in s:
+        return "signal-miss"
     if "outlier" in s:
         return "signal-outlier"
     if "reversal" in s:

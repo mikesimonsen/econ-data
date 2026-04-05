@@ -319,6 +319,15 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
                     except (ValueError, TypeError):
                         pass
 
+    # ── Expectations beat/miss ─────────────────────────────
+    try:
+        from econ_data.expectations import check_surprise
+        surprise = check_surprise(series_id, latest_value, period, db_path)
+        if surprise:
+            signals.insert(0, surprise)  # lead with beat/miss
+    except Exception:
+        pass  # expectations table may not exist yet
+
     return {
         "series_id": series_id,
         "name": name,
