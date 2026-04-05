@@ -18,6 +18,7 @@ from econ_data.store_sqlite import (
 )
 from econ_data.briefing import generate_briefing
 from econ_data.daily_analysis import generate_daily_analysis
+from econ_data.housing_analysis import generate_housing_analysis
 from econ_data.export_sheets import export_all_groups, export_all_groups_calcs, write_manifest
 from econ_data.summary import generate_summary, format_summary, format_signals_by_recency
 
@@ -206,6 +207,16 @@ if __name__ == "__main__":
         log(f"Daily analysis saved to {analysis_path}")
     except Exception as e:
         log(f"Daily analysis failed: {e}")
+
+    # Housing impact analysis
+    log("Generating housing analysis...")
+    try:
+        housing_md = generate_housing_analysis(cfg)
+        housing_path = summary_dir / f"housing analysis {today}.md"
+        housing_path.write_text(f"# Housing Analysis — {today}\n\n{housing_md}\n")
+        log(f"Housing analysis saved to {housing_path}")
+    except Exception as e:
+        log(f"Housing analysis failed: {e}")
 
     # Editorial briefing (HTML)
     log("Generating editorial briefing...")

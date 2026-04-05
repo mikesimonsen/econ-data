@@ -466,6 +466,8 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
 
     release_ts = _release_dates(db_path)
     analysis_md = _load_analysis(today)
+    from econ_data.housing_analysis import load_housing_analysis
+    housing_md = load_housing_analysis(today)
     name_map = _build_name_map(summary)
 
     # Build revision lookup by series_id
@@ -494,9 +496,12 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
         elif captured >= recent_cutoff:
             recent_series.append((gid, gname, a))
 
+    housing_html = _md_to_html(housing_md, name_map) if housing_md else ""
+
     html = _render_page(
         today=today,
         analysis_html=_md_to_html(analysis_md, name_map) if analysis_md else "",
+        housing_html=housing_html,
         today_series=today_series,
         recent_series=recent_series,
         revisions_by_series=revisions_by_series,
@@ -518,6 +523,7 @@ def _render_page(**ctx) -> str:
 
     # Build sections — today_html must render first (it populates chart_csv_data)
     analysis_html = ctx.get("analysis_html", "")
+    housing_html = ctx.get("housing_html", "")
     today_html = _render_today(ctx)
     recent_html = _render_recent(ctx)
     all_groups_html = _render_all_groups(ctx)
@@ -552,6 +558,7 @@ def _render_page(**ctx) -> str:
 
 <nav>
   <a href="#today" class="active" onclick="showTab('today', this)">Today</a>
+  <a href="#housing" onclick="showTab('housing', this)">Housing</a>
   <a href="#recent" onclick="showTab('recent', this)">Recent Data Releases{_badge(recent_count)}</a>
   <a href="#deepdive" onclick="showTab('deepdive', this)">All Data</a>
   <div class="search-box">
@@ -563,6 +570,10 @@ def _render_page(**ctx) -> str:
   <section id="today" class="tab-content active">
     {f'<div class="analysis-block">{analysis_html}</div>' if analysis_html else ''}
     {today_html}
+  </section>
+
+  <section id="housing" class="tab-content">
+    {f'<div class="analysis-block">{housing_html}</div>' if housing_html else '<p class="muted">Housing analysis not yet generated. Run the pipeline to generate.</p>'}
   </section>
 
   <section id="recent" class="tab-content">
