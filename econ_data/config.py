@@ -44,6 +44,23 @@ def inverted_series(cfg: dict) -> set:
     return result
 
 
+def minimal_signal_series(cfg: dict) -> set:
+    """Return set of series IDs with signals: minimal.
+
+    These series suppress YoY-based signals and unusual-move detection,
+    keeping only beat/miss, trend reversal, and directional trend.
+    """
+    result = set()
+    for group in cfg.get("groups", {}).values():
+        if group.get("signals") == "minimal":
+            for s in group["series"]:
+                result.add(s["id"])
+    for s in cfg.get("series", []):
+        if s.get("signals") == "minimal":
+            result.add(s["id"])
+    return result
+
+
 def seasonal_series(cfg: dict) -> set:
     """Return set of series IDs that need seasonal adjustment."""
     result = set()

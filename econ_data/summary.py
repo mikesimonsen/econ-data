@@ -5,13 +5,15 @@ import sqlite3
 import statistics
 from pathlib import Path
 
-from econ_data.config import load as load_config, percent_series, seasonal_series
+from econ_data.config import (load as load_config, percent_series,
+                              seasonal_series, minimal_signal_series)
 from econ_data.seasonal import compute_seasonal_factors, sa_period_changes
 from econ_data.store_sqlite import DB_PATH
 
 # Cached config lookups
 _PERCENT_IDS = None
 _SEASONAL_IDS = None
+_MINIMAL_IDS = None
 
 
 def _get_percent_ids():
@@ -26,6 +28,13 @@ def _get_seasonal_ids():
     if _SEASONAL_IDS is None:
         _SEASONAL_IDS = seasonal_series(load_config())
     return _SEASONAL_IDS
+
+
+def _get_minimal_ids():
+    global _MINIMAL_IDS
+    if _MINIMAL_IDS is None:
+        _MINIMAL_IDS = minimal_signal_series(load_config())
+    return _MINIMAL_IDS
 
 # Windows by frequency (observation counts approximating real-time spans)
 MONTHLY_TREND = 6        # 6 months
@@ -178,6 +187,8 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
             else:
                 break
 
+    minimal = series_id in _get_minimal_ids()
+
     # ── Trend reversal (uses SA changes for seasonal series) ──
     if len(signal_recent) >= 3 and signal_period is not None:
         prior_changes = signal_recent[:-1]
@@ -191,7 +202,8 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
                 signals.append("Reversal: downtick breaks recent rise")
 
     # ── Unusual move (uses SA changes for seasonal series) ──
-    if len(signal_history) >= 6 and signal_period is not None:
+    # Suppressed for minimal-signal series (inflation, labor, rates)
+    if not minimal and len(signal_history) >= 6 and signal_period is not None:
         mean_ch = statistics.mean(signal_history)
         stdev_ch = statistics.stdev(signal_history)
         if stdev_ch > 0:
@@ -201,7 +213,8 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
                 signals.append(f"Unusual {direction} ({z_score:+.1f} std devs)")
 
     # ── Sign changes (crosses zero) ────────────────────────
-    if len(recent_yoy) >= 2:
+    # YoY sign changes suppressed for minimal; period sign changes kept
+    if not minimal and len(recent_yoy) >= 2:
         prev_yoy = recent_yoy[-2]
         curr_yoy = recent_yoy[-1]
         if prev_yoy > 0 and curr_yoy < 0:
@@ -217,107 +230,97 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
         elif prev_ch < 0 and curr_ch > 0 and "Reversal: uptick breaks recent decline" not in signals:
             signals.append("Period change turned positive (was negative)")
 
-    # ── YoY acceleration/deceleration ───────────────────────
-    if len(recent_yoy) >= 3:
-        yoy_diffs = [recent_yoy[i] - recent_yoy[i - 1] for i in range(1, len(recent_yoy))]
-        recent_yoy_diffs = yoy_diffs[-3:]
+    # ── YoY signals (suppressed for minimal-signal series) ──
+    if not minimal:
 
-        if all(d > 0 for d in recent_yoy_diffs):
-            signals.append("YoY accelerating")
-        elif all(d < 0 for d in recent_yoy_diffs):
-            signals.append("YoY decelerating")
-        # Softer check: if 4+ of last 5 diffs trend the same way, flag it
-        elif len(yoy_diffs) >= 5:
-            last5 = yoy_diffs[-5:]
-            neg_count = sum(1 for d in last5 if d < 0)
-            pos_count = sum(1 for d in last5 if d > 0)
-            if neg_count >= 4 and "YoY decelerating" not in signals:
-                signals.append("YoY trend worsening")
-            elif pos_count >= 4 and "YoY accelerating" not in signals:
-                signals.append("YoY trend improving")
+        # ── YoY acceleration/deceleration ───────────────────
+        if len(recent_yoy) >= 3:
+            yoy_diffs = [recent_yoy[i] - recent_yoy[i - 1] for i in range(1, len(recent_yoy))]
+            recent_yoy_diffs = yoy_diffs[-3:]
 
-    # ── Sustained negative/positive YoY ────────────────────
-    # Flag when YoY has stayed negative (or positive in a normally-negative
-    # context) for an extended period — the zero-crossing was the event,
-    # but staying there is the story.
-    # Only flag sustained streaks at 6+ months — short streaks are
-    # already covered by the zero-crossing signal.
-    # Uses full YoY history (not the trend window) to count the actual streak.
-    sustained_min = {"daily": 126, "weekly": 26, "monthly": 6}.get(freq, 6)
-    all_yoy = [data["yoy_pct"][r[0]] for r in rows if r[0] in data["yoy_pct"]]
-    if len(all_yoy) >= sustained_min and yoy is not None:
-        if yoy < 0:
-            neg_streak = 0
-            for y in reversed(all_yoy):
-                if y < 0:
-                    neg_streak += 1
-                else:
-                    break
-            if neg_streak >= sustained_min:
-                unit = {"daily": "d", "weekly": "wk", "monthly": "mo"}.get(freq, "mo")
-                signals.append(f"YoY negative {neg_streak}{unit}")
-        elif yoy > 0:
-            pos_streak = 0
-            for y in reversed(all_yoy):
-                if y > 0:
-                    pos_streak += 1
-                else:
-                    break
-            # Only flag sustained positive if it recently crossed from negative
-            # (i.e., streak started within the recent window)
-            if pos_streak >= sustained_min and pos_streak < len(all_yoy):
-                unit = {"daily": "d", "weekly": "wk", "monthly": "mo"}.get(freq, "mo")
-                signals.append(f"YoY positive {pos_streak}{unit}")
+            if all(d > 0 for d in recent_yoy_diffs):
+                signals.append("YoY accelerating")
+            elif all(d < 0 for d in recent_yoy_diffs):
+                signals.append("YoY decelerating")
+            elif len(yoy_diffs) >= 5:
+                last5 = yoy_diffs[-5:]
+                neg_count = sum(1 for d in last5 if d < 0)
+                pos_count = sum(1 for d in last5 if d > 0)
+                if neg_count >= 4 and "YoY decelerating" not in signals:
+                    signals.append("YoY trend worsening")
+                elif pos_count >= 4 and "YoY accelerating" not in signals:
+                    signals.append("YoY trend improving")
 
-    # ── YoY at multi-year extreme ──────────────────────────
-    # Flag when YoY is at its most extreme level in 2+ years.
-    # "When was the last time it was this bad/good?" — if the answer
-    # is 2+ years ago, that's a signal.
-    all_dates = [r[0] for r in rows]
-    yoy_dated = [(d, data["yoy_pct"][d]) for d in all_dates
-                 if d in data["yoy_pct"]]
-    if len(yoy_dated) >= history_window and yoy is not None:
-        from datetime import datetime as _dt
-        min_gap_days = 730  # 2 years
-        try:
-            current_dt = _dt.strptime(latest_date, "%Y-%m-%d")
-        except (ValueError, TypeError):
-            current_dt = None
-
-        if current_dt:
+        # ── Sustained negative/positive YoY ─────────────────
+        sustained_min = {"daily": 126, "weekly": 26, "monthly": 6}.get(freq, 6)
+        all_yoy = [data["yoy_pct"][r[0]] for r in rows if r[0] in data["yoy_pct"]]
+        if len(all_yoy) >= sustained_min and yoy is not None:
             if yoy < 0:
-                # Find the most recent prior period with a YoY as low or lower
-                last_as_bad = None
-                for d, y in reversed(yoy_dated[:-1]):
-                    if y <= yoy:
-                        last_as_bad = d
+                neg_streak = 0
+                for y in reversed(all_yoy):
+                    if y < 0:
+                        neg_streak += 1
+                    else:
                         break
-                if last_as_bad is None:
-                    signals.append("YoY at all-time low")
-                else:
-                    try:
-                        gap = (current_dt - _dt.strptime(last_as_bad, "%Y-%m-%d")).days
-                        if gap >= min_gap_days:
-                            label = _dt.strptime(last_as_bad, "%Y-%m-%d").strftime("%b %Y")
-                            signals.append(f"YoY at lowest since {label}")
-                    except (ValueError, TypeError):
-                        pass
+                if neg_streak >= sustained_min:
+                    unit = {"daily": "d", "weekly": "wk", "monthly": "mo"}.get(freq, "mo")
+                    signals.append(f"YoY negative {neg_streak}{unit}")
             elif yoy > 0:
-                last_as_good = None
-                for d, y in reversed(yoy_dated[:-1]):
-                    if y >= yoy:
-                        last_as_good = d
+                pos_streak = 0
+                for y in reversed(all_yoy):
+                    if y > 0:
+                        pos_streak += 1
+                    else:
                         break
-                if last_as_good is None:
-                    signals.append("YoY at all-time high")
-                else:
-                    try:
-                        gap = (current_dt - _dt.strptime(last_as_good, "%Y-%m-%d")).days
-                        if gap >= min_gap_days:
-                            label = _dt.strptime(last_as_good, "%Y-%m-%d").strftime("%b %Y")
-                            signals.append(f"YoY at highest since {label}")
-                    except (ValueError, TypeError):
-                        pass
+                if pos_streak >= sustained_min and pos_streak < len(all_yoy):
+                    unit = {"daily": "d", "weekly": "wk", "monthly": "mo"}.get(freq, "mo")
+                    signals.append(f"YoY positive {pos_streak}{unit}")
+
+        # ── YoY at multi-year extreme ───────────────────────
+        all_dates = [r[0] for r in rows]
+        yoy_dated = [(d, data["yoy_pct"][d]) for d in all_dates
+                     if d in data["yoy_pct"]]
+        if len(yoy_dated) >= history_window and yoy is not None:
+            from datetime import datetime as _dt
+            min_gap_days = 730  # 2 years
+            try:
+                current_dt = _dt.strptime(latest_date, "%Y-%m-%d")
+            except (ValueError, TypeError):
+                current_dt = None
+
+            if current_dt:
+                if yoy < 0:
+                    last_as_bad = None
+                    for d, y in reversed(yoy_dated[:-1]):
+                        if y <= yoy:
+                            last_as_bad = d
+                            break
+                    if last_as_bad is None:
+                        signals.append("YoY at all-time low")
+                    else:
+                        try:
+                            gap = (current_dt - _dt.strptime(last_as_bad, "%Y-%m-%d")).days
+                            if gap >= min_gap_days:
+                                label = _dt.strptime(last_as_bad, "%Y-%m-%d").strftime("%b %Y")
+                                signals.append(f"YoY at lowest since {label}")
+                        except (ValueError, TypeError):
+                            pass
+                elif yoy > 0:
+                    last_as_good = None
+                    for d, y in reversed(yoy_dated[:-1]):
+                        if y >= yoy:
+                            last_as_good = d
+                            break
+                    if last_as_good is None:
+                        signals.append("YoY at all-time high")
+                    else:
+                        try:
+                            gap = (current_dt - _dt.strptime(last_as_good, "%Y-%m-%d")).days
+                            if gap >= min_gap_days:
+                                label = _dt.strptime(last_as_good, "%Y-%m-%d").strftime("%b %Y")
+                                signals.append(f"YoY at highest since {label}")
+                        except (ValueError, TypeError):
+                            pass
 
     # ── Expectations beat/miss ─────────────────────────────
     try:

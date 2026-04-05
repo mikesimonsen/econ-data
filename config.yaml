@@ -11,6 +11,7 @@ series: []
 groups:
   cpi:
     name: "CPI - Consumer Price Index (BLS, SA)"
+    signals: minimal
     series:
       # Headline and core
       - id: CPIAUCSL
@@ -35,6 +36,7 @@ groups:
 
   cpi-metro:
     name: "CPI by Metro Area (BLS)"
+    signals: minimal
     series:
       # --- Available via FRED ---
       - id: CUURA101SA0
@@ -110,6 +112,7 @@ groups:
 
   pce:
     name: "PCE Price Index (Fed's Preferred Inflation Measure)"
+    signals: minimal
     series:
       - id: PCEPI
         name: "PCE Price Index"
@@ -118,6 +121,7 @@ groups:
 
   ppi:
     name: "Producer Price Index (BLS, SA)"
+    signals: minimal
     series:
       - id: WPSFD49207
         name: "PPI Final Demand - Finished Goods"
@@ -126,6 +130,7 @@ groups:
 
   jolts:
     name: "JOLTS - Job Openings and Labor Turnover"
+    signals: minimal
     series:
       - id: JTSJOL
         name: "Job Openings: Total Nonfarm"
@@ -369,6 +374,7 @@ groups:
 
   unemployment:
     name: "Unemployment & Labor Underutilization (BLS)"
+    signals: minimal
     series:
       # U-rates (all measures of labor underutilization)
       - id: UNRATE
@@ -421,6 +427,7 @@ groups:
 
   labor-force:
     name: "Labor Force & Employment (BLS)"
+    signals: minimal
     series:
       - id: CLF16OV
         name: "Civilian Labor Force Level (000s)"
@@ -441,6 +448,7 @@ groups:
 
   labor-quality:
     name: "Labor Market Quality"
+    signals: minimal
     series:
       - id: LNS12600000
         name: "Multiple Jobholders (000s)"
@@ -458,6 +466,7 @@ groups:
 
   jobless-claims:
     name: "Jobless Claims (Weekly, SA)"
+    signals: minimal
     series:
       - id: ICSA
         name: "Initial Claims"
@@ -479,6 +488,7 @@ groups:
   treasury-yields:
     name: "Treasury Yields (Daily)"
     source: web
+    signals: minimal
     series:
       - id: DGS10
         name: "10-Year Treasury Yield"
@@ -487,6 +497,7 @@ groups:
   oil:
     name: "Oil Prices (Daily)"
     source: web
+    signals: minimal
     series:
       - id: WTI_CRUDE
         name: "WTI Crude Oil Futures"
@@ -495,6 +506,7 @@ groups:
   mortgage-spread:
     name: "Mortgage Rate Spread (30Y Fixed - 10Y Treasury)"
     source: calculated
+    signals: minimal
     series:
       - id: SPREAD_30Y_10Y
         name: "Mortgage Rate Spread (30Y - 10Y)"
@@ -509,6 +521,7 @@ groups:
   mortgage-rates:
     name: "Mortgage Rates (Mortgage News Daily)"
     source: mnd
+    signals: minimal
     series:
       - id: MND_30YR_FIXED
         name: "30-Year Fixed Mortgage Rate"
@@ -532,6 +545,7 @@ groups:
   consumer-confidence:
     name: "Consumer Confidence (Conference Board)"
     source: confboard
+    signals: minimal
     series:
       - id: CB_CCI
         name: "Consumer Confidence Index (Conference Board)"
