@@ -46,6 +46,10 @@ var GROUPS = [
   { file: "construction-employment", tab: "Construction Employment" },
   { file: "households", tab: "Households" },
   { file: "labor-quality", tab: "Labor Quality" },
+  { file: "mortgage-spread", tab: "Mortgage Spread" },
+  { file: "altos-inventory", tab: "Altos Inventory" },
+  { file: "altos-new-listings", tab: "Altos New Listings" },
+  { file: "altos-new-pending", tab: "Altos New Pending" },
 ];
 
 // ── Main functions ───────────────────────────────────────────
