@@ -171,6 +171,15 @@ groups:
         name: "Median Duration of Unemployment (Weeks)"
         inverted: true
 
+  productivity:
+    name: "Productivity (BLS, Quarterly)"
+    signals: minimal
+    series:
+      - id: OPHNFB
+        name: "Output Per Hour - Nonfarm Business"
+      - id: PRS85006092
+        name: "Unit Labor Costs - Nonfarm Business"
+
   labor-detail:
     name: "Labor Market Detail"
     signals: minimal
