@@ -37,6 +37,10 @@ RIGHT NOW, these themes are especially important:
 
 5. NEW PENDING SALES: Altos new pending (contract) data is the most real-time demand signal. YoY just turned negative — this is an early warning if it persists.
 
+6. MBA PURCHASE INDEX: Weekly mortgage purchase application volume. A leading indicator of existing home sales ~4-6 weeks ahead. Currently YoY positive for 62 consecutive weeks but just reversed direction — watch for whether this is noise or demand softening.
+
+7. XACTUS MORTGAGE INTENT INDEX (MII): Measures credit inquiry volume from mortgage lenders — a leading indicator of MBA applications by 2-4 weeks. When MII rises, purchase applications tend to follow. Compare MII trajectory to MBA to see if demand is building or fading before it shows up in application data.
+
 == RULES ==
 - Use specific numbers from the data, not vague descriptions
 - Every claim must be traceable to a data point in the snapshot
