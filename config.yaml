@@ -128,12 +128,100 @@ groups:
       - id: WPSFD4131
         name: "PPI Final Demand - Less Food & Energy"
 
-  jolts:
-    name: "JOLTS - Job Openings and Labor Turnover"
+  labor-headlines:
+    name: "Labor Market Headlines"
     signals: minimal
     series:
+      # Employment situation (BLS, first Friday)
+      - id: UNRATE
+        name: "Unemployment Rate"
+        units: percent
+        inverted: true
+      - id: U6RATE
+        name: "U-6 Underemployment Rate"
+        units: percent
+        inverted: true
+      - id: PAYEMS
+        name: "Total Nonfarm Payrolls (000s)"
+      - id: CE16OV
+        name: "CPS Employment Level (000s)"
+      - id: CES0500000003
+        name: "Average Hourly Earnings"
+      # JOLTS headlines
       - id: JTSJOL
-        name: "Job Openings: Total Nonfarm"
+        name: "JOLTS Job Openings"
+      - id: JTSHIR
+        name: "JOLTS Hires Rate"
+        units: percent
+      - id: JTSQUR
+        name: "JOLTS Quits Rate"
+        units: percent
+      # Claims
+      - id: ICSA
+        name: "Initial Jobless Claims"
+        inverted: true
+      - id: IC4WSA
+        name: "Initial Claims 4-Week Avg"
+        inverted: true
+      # Duration (housing-relevant: distressed borrower risk)
+      - id: UEMP27OV
+        name: "Unemployed 27+ Weeks (000s)"
+        inverted: true
+      - id: UEMPMED
+        name: "Median Duration of Unemployment (Weeks)"
+        inverted: true
+
+  labor-detail:
+    name: "Labor Market Detail"
+    signals: minimal
+    series:
+      # U-rates
+      - id: U1RATE
+        name: "U-1 Unemployed 15+ Weeks as % of Labor Force"
+        units: percent
+        inverted: true
+      - id: U2RATE
+        name: "U-2 Job Losers as % of Labor Force"
+        units: percent
+        inverted: true
+      - id: U4RATE
+        name: "U-4 + Discouraged Workers"
+        units: percent
+        inverted: true
+      - id: U5RATE
+        name: "U-5 + Other Marginally Attached"
+        units: percent
+        inverted: true
+      # Unemployment duration & levels
+      - id: UEMPLT5
+        name: "Unemployed Less Than 5 Weeks (000s)"
+        inverted: true
+      - id: UEMP5TO14
+        name: "Unemployed 5-14 Weeks (000s)"
+        inverted: true
+      - id: UEMP15T26
+        name: "Unemployed 15-26 Weeks (000s)"
+        inverted: true
+      - id: UNEMPLOY
+        name: "Total Unemployed (000s)"
+        inverted: true
+      - id: UEMPMEAN
+        name: "Average Duration of Unemployment (Weeks)"
+        inverted: true
+      # Labor force
+      - id: CLF16OV
+        name: "Civilian Labor Force Level (000s)"
+      - id: CIVPART
+        name: "Labor Force Participation Rate"
+        units: percent
+      - id: EMRATIO
+        name: "Employment-Population Ratio"
+        units: percent
+      - id: AWHAETP
+        name: "Average Weekly Hours"
+      - id: AHETPI
+        name: "Average Hourly Earnings - Production Workers"
+      # JOLTS detail
       - id: JTSHIL
         name: "Hires: Total Nonfarm"
       - id: JTSTSL
@@ -147,18 +235,35 @@ groups:
       - id: JTSJOR
         name: "Job Openings Rate"
         units: percent
-      - id: JTSHIR
-        name: "Hires Rate"
-        units: percent
       - id: JTSTSR
         name: "Total Separations Rate"
         units: percent
         inverted: true
-      - id: JTSQUR
-        name: "Quits Rate"
-        units: percent
       - id: JTSLDR
         name: "Layoffs and Discharges Rate"
+        units: percent
+        inverted: true
+      # Labor quality
+      - id: LNS12600000
+        name: "Multiple Jobholders (000s)"
+      - id: LNS12026619
+        name: "Multiple Jobholders as % of Employed"
+        units: percent
+      - id: LNS12032194
+        name: "Part-Time for Economic Reasons (000s)"
+      - id: CES0500000017
+        name: "Aggregate Weekly Payrolls Index"
+      - id: TEMPHELPS
+        name: "Temp Help Services Employment (000s)"
+      # Continuing claims
+      - id: CCSA
+        name: "Continuing Claims"
+        inverted: true
+      - id: CC4WSA
+        name: "Continuing Claims 4-Week Avg"
+        inverted: true
+      - id: IURSA
+        name: "Insured Unemployment Rate"
         units: percent
         inverted: true
 
@@ -372,118 +477,6 @@ groups:
       - id: PRRESCONS
         name: "Private Residential Construction Spending"
 
-  unemployment:
-    name: "Unemployment & Labor Underutilization (BLS)"
-    signals: minimal
-    series:
-      # U-rates (all measures of labor underutilization)
-      - id: UNRATE
-        name: "U-3 Unemployment Rate (Official)"
-        units: percent
-        inverted: true
-      - id: U1RATE
-        name: "U-1 Unemployed 15+ Weeks as % of Labor Force"
-        units: percent
-        inverted: true
-      - id: U2RATE
-        name: "U-2 Job Losers as % of Labor Force"
-        units: percent
-        inverted: true
-      - id: U4RATE
-        name: "U-4 + Discouraged Workers"
-        units: percent
-        inverted: true
-      - id: U5RATE
-        name: "U-5 + Other Marginally Attached"
-        units: percent
-        inverted: true
-      - id: U6RATE
-        name: "U-6 + Part-Time for Economic Reasons"
-        units: percent
-        inverted: true
-      # Unemployment by duration
-      - id: UEMPLT5
-        name: "Unemployed Less Than 5 Weeks (000s)"
-        inverted: true
-      - id: UEMP5TO14
-        name: "Unemployed 5-14 Weeks (000s)"
-        inverted: true
-      - id: UEMP15T26
-        name: "Unemployed 15-26 Weeks (000s)"
-        inverted: true
-      - id: UEMP27OV
-        name: "Unemployed 27+ Weeks (000s)"
-        inverted: true
-      # Levels and duration
-      - id: UNEMPLOY
-        name: "Total Unemployed (000s)"
-        inverted: true
-      - id: UEMPMED
-        name: "Median Duration of Unemployment (Weeks)"
-        inverted: true
-      - id: UEMPMEAN
-        name: "Average Duration of Unemployment (Weeks)"
-        inverted: true
-
-  labor-force:
-    name: "Labor Force & Employment (BLS)"
-    signals: minimal
-    series:
-      - id: CLF16OV
-        name: "Civilian Labor Force Level (000s)"
-      - id: CIVPART
-        name: "Labor Force Participation Rate"
-        units: percent
-      - id: EMRATIO
-        name: "Employment-Population Ratio"
-        units: percent
-      - id: PAYEMS
-        name: "Total Nonfarm Payrolls (000s)"
-      - id: CES0500000003
-        name: "Average Hourly Earnings - All Employees"
-      - id: AWHAETP
-        name: "Average Weekly Hours - All Employees"
-      - id: AHETPI
-        name: "Average Hourly Earnings - Production Workers"
-
-  labor-quality:
-    name: "Labor Market Quality"
-    signals: minimal
-    series:
-      - id: LNS12600000
-        name: "Multiple Jobholders (000s)"
-      - id: LNS12026619
-        name: "Multiple Jobholders as % of Employed"
-        units: percent
-      - id: LNS12032194
-        name: "Part-Time for Economic Reasons (000s)"
-      - id: CES0500000017
-        name: "Aggregate Weekly Payrolls Index"
-      - id: TEMPHELPS
-        name: "Temp Help Services Employment (000s)"
-      - id: IC4WSA
-        name: "Initial Claims 4-Week Moving Average"
-
-  jobless-claims:
-    name: "Jobless Claims (Weekly, SA)"
-    signals: minimal
-    series:
-      - id: ICSA
-        name: "Initial Claims"
-        inverted: true
-      - id: IC4WSA
-        name: "Initial Claims - 4 Week Average"
-        inverted: true
-      - id: CCSA
-        name: "Continuing Claims"
-        inverted: true
-      - id: CC4WSA
-        name: "Continuing Claims - 4 Week Average"
-        inverted: true
-      - id: IURSA
-        name: "Insured Unemployment Rate"
-        units: percent
-        inverted: true
 
   treasury-yields:
     name: "Treasury Yields (Daily)"
