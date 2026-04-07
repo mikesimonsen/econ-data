@@ -427,10 +427,25 @@ def _search_consensus(spec: dict, period: str) -> dict | None:
                f"I need the expected change in jobs (e.g. +150,000). "
                f"Return ONLY the number in thousands.")
     elif compare == "mom_pct":
+        # Compute the prior month label for clarity
+        from datetime import datetime, timedelta
+        try:
+            dt = datetime.strptime(period, "%Y-%m")
+            prior_dt = (dt.replace(day=1) - timedelta(days=1)).replace(day=1)
+            prior_label = prior_dt.strftime("%B")
+        except (ValueError, TypeError):
+            prior_label = "the prior month"
+
         ask = (f"What is the consensus forecast for US "
-               f"{spec['search_term']} for {period_label}? "
-               f"I need the expected month-over-month percent change "
-               f"(e.g. 0.3%). Return ONLY the percentage.")
+               f"{spec['search_term']} for {period_label}?\n\n"
+               f"I need the MONTH-OVER-MONTH percent change — meaning the "
+               f"percent the index is expected to rise from {prior_label} "
+               f"to {period_label}. This is typically a small number "
+               f"between -0.5% and +1.0% (e.g. 0.2%, 0.3%, 0.4%).\n\n"
+               f"DO NOT return the year-over-year (YoY) change, which is "
+               f"typically 2%-5%. I need MoM ONLY.\n\n"
+               f"Return ONLY the MoM percentage as a decimal "
+               f"(e.g. 0.3 for 0.3%).")
     else:  # level
         ask = (f"What is the consensus forecast for US "
                f"{spec['search_term']} for {period_label}? "
@@ -457,11 +472,16 @@ def _search_consensus(spec: dict, period: str) -> dict | None:
                 '{"value": <number>, "context": "<one line: source and what the number means>"}\n\n'
                 "Rules for the value field:\n"
                 "- Nonfarm payrolls change: thousands (e.g. 150 means +150,000 jobs)\n"
-                "- Month-over-month percentages: the percentage (e.g. 0.3 means +0.3%)\n"
+                "- Month-over-month percentages: typically -0.5 to +1.0 "
+                "(e.g. 0.3 means +0.3%). NEVER return year-over-year (YoY) "
+                "values here — those are typically 2-5 and would be wrong.\n"
                 "- Unemployment rate: the rate (e.g. 4.2)\n"
                 "- Initial claims: thousands (e.g. 225 means 225,000)\n"
                 "- Job openings, home sales, housing starts: thousands (e.g. 4000 means 4,000,000 for JOLTS)\n"
                 "- Consumer confidence: index value (e.g. 92.5)\n\n"
+                "SANITY CHECK: For MoM inflation (CPI, PCE), if your value "
+                "is greater than 1.0, you probably grabbed YoY by mistake. "
+                "Search again for the MoM number specifically.\n\n"
                 "If you truly cannot find a pre-release consensus forecast, respond:\n"
                 '{"value": null, "context": "not found"}'
             ),
@@ -493,8 +513,13 @@ def _search_consensus(spec: dict, period: str) -> dict | None:
         try:
             result = json.loads(text_to_parse)
             if result.get("value") is not None:
+                value = float(result["value"])
+                # Sanity check: MoM percentages should never exceed ~1.5%
+                if compare == "mom_pct" and abs(value) > 1.5:
+                    print(f"  Rejecting MoM value {value} (likely YoY)")
+                    return None
                 return {
-                    "expected": float(result["value"]),
+                    "expected": value,
                     "source_text": result.get("context", ""),
                 }
         except (json.JSONDecodeError, ValueError, TypeError):
