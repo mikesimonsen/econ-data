@@ -34,6 +34,7 @@ _GROUP_SEARCH_TAGS = {
     "housing-completions": "housing construction residential",
     "construction-spending": "housing construction residential spending",
     "construction-employment": "construction jobs employment",
+    "sp500": "stocks equity market sp500 index",
     "labor-headlines": "jobs labor unemployment payrolls openings hires claims",
     "labor-detail": "jobs labor unemployment quits separations layoffs participation",
     "treasury-yields": "rates bonds interest",

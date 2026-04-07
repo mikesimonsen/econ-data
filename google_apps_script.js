@@ -37,6 +37,7 @@ var GROUPS = [
   { file: "construction-spending", tab: "Construction Spending" },
   { file: "treasury-yields", tab: "Treasury Yields" },
   { file: "oil", tab: "Oil" },
+  { file: "sp500", tab: "S&P 500" },
   { file: "mortgage-rates", tab: "Mortgage Rates" },
   { file: "consumer-confidence", tab: "Consumer Confidence" },
   { file: "mba-applications", tab: "MBA Purchase" },

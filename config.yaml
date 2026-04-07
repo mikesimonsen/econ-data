@@ -496,6 +496,14 @@ groups:
         name: "10-Year Treasury Yield"
         units: percent
 
+  sp500:
+    name: "S&P 500 Index (Daily)"
+    source: web
+    signals: minimal
+    series:
+      - id: SP500
+        name: "S&P 500 Index"
+
   oil:
     name: "Oil Prices (Daily)"
     source: web

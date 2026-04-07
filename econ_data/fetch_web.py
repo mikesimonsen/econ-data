@@ -88,6 +88,11 @@ def _scrape_wti_crude() -> list:
     return _scrape_yahoo("CL=F", "5d")
 
 
+def _scrape_sp500() -> list:
+    """Fetch S&P 500 (^GSPC) daily close from Yahoo Finance API."""
+    return _scrape_yahoo("%5EGSPC", "5d")
+
+
 def _scrape_dgs10() -> list:
     """Fetch 10-Year Treasury yield (^TNX) daily close from Yahoo Finance API.
 
@@ -201,10 +206,16 @@ def _import_wti_crude(last: date = None) -> list:
     return _scrape_yahoo("CL=F", "2y")
 
 
+def _import_sp500(last: date = None) -> list:
+    """Backfill S&P 500 from Yahoo Finance (10 years daily)."""
+    return _scrape_yahoo("%5EGSPC", "10y")
+
+
 # Maps series_id to import function (for historical backfill from files)
 IMPORTERS = {
     "MBA_PURCHASE": _import_mba_purchase,
     "WTI_CRUDE": _import_wti_crude,
+    "SP500": _import_sp500,
 }
 
 
@@ -216,6 +227,7 @@ SCRAPERS = {
     "MBA_PURCHASE": (_scrape_mba_purchase, "MBA Purchase Index"),
     "WTI_CRUDE": (_scrape_wti_crude, "WTI Crude Oil Futures"),
     "DGS10": (_scrape_dgs10, "10-Year Treasury Yield"),
+    "SP500": (_scrape_sp500, "S&P 500 Index"),
 }
 
 # Cooldown: days to wait after last observation before scraping again
@@ -223,6 +235,7 @@ COOLDOWN = {
     "MBA_PURCHASE": 5,   # weekly, check a few days after last reading
     "WTI_CRUDE": 0,      # daily, always check
     "DGS10": 0,          # daily, always check
+    "SP500": 0,          # daily, always check
 }
 
 DEFAULT_COOLDOWN = 7
