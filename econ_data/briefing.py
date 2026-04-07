@@ -468,6 +468,9 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
     housing_md = load_housing_analysis(today)
     name_map = _build_name_map(summary)
 
+    from econ_data.expectations import get_upcoming_releases
+    upcoming_releases = get_upcoming_releases(days_ahead=7, db_path=db_path)
+
     # Build revision lookup by series_id
     revisions_by_series = {}
     for r in revisions:
@@ -500,6 +503,7 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
         today=today,
         analysis_html=_md_to_html(analysis_md, name_map) if analysis_md else "",
         housing_html=housing_html,
+        upcoming_releases=upcoming_releases,
         today_series=today_series,
         recent_series=recent_series,
         revisions_by_series=revisions_by_series,
@@ -523,6 +527,7 @@ def _render_page(**ctx) -> str:
     analysis_html = ctx.get("analysis_html", "")
     housing_html = ctx.get("housing_html", "")
     today_html = _render_today(ctx)
+    upcoming_html = _render_upcoming(ctx)
     recent_html = _render_recent(ctx)
     all_groups_html = _render_all_groups(ctx)
     csv_json = json.dumps(ctx["csv_data"])
@@ -557,6 +562,7 @@ def _render_page(**ctx) -> str:
 <nav>
   <a href="#today" class="active" onclick="showTab('today', this)">Today</a>
   <a href="#housing" onclick="showTab('housing', this)">Housing</a>
+  <a href="#upcoming" onclick="showTab('upcoming', this)">Upcoming</a>
   <a href="#recent" onclick="showTab('recent', this)">Recent Data Releases{_badge(recent_count)}</a>
   <a href="#deepdive" onclick="showTab('deepdive', this)">All Data</a>
   <div class="search-box">
@@ -572,6 +578,10 @@ def _render_page(**ctx) -> str:
 
   <section id="housing" class="tab-content">
     {f'<div class="analysis-block">{housing_html}</div>' if housing_html else '<p class="muted">Housing analysis not yet generated. Run the pipeline to generate.</p>'}
+  </section>
+
+  <section id="upcoming" class="tab-content">
+    {upcoming_html}
   </section>
 
   <section id="recent" class="tab-content">
@@ -1097,6 +1107,94 @@ def _render_hero_charts(ctx) -> str:
     # Store chart CSVs in context for JS embedding
     ctx["chart_csv_data"] = chart_csvs
     return "\n".join(parts)
+
+
+def _render_upcoming(ctx) -> str:
+    """Render the Upcoming tab — releases expected in the next 7 days."""
+    from datetime import datetime
+    upcoming = ctx.get("upcoming_releases", [])
+    if not upcoming:
+        return "<p class='muted'>No tracked releases expected in the next 7 days.</p>"
+
+    # Group by release date
+    by_date = {}
+    for rel in upcoming:
+        by_date.setdefault(rel["release_date"], []).append(rel)
+
+    parts = []
+    for release_date in sorted(by_date.keys()):
+        try:
+            dt = datetime.strptime(release_date, "%Y-%m-%d")
+            label = dt.strftime("%A, %B %-d")
+        except (ValueError, TypeError):
+            label = release_date
+
+        rows = []
+        for rel in by_date[release_date]:
+            prior = ""
+            if rel["prior_value"] is not None:
+                v = rel["prior_value"]
+                if abs(v) >= 1000:
+                    prior = f"{v:,.0f}"
+                elif abs(v) >= 10:
+                    prior = f"{v:.1f}"
+                else:
+                    prior = f"{v:.2f}"
+                if rel["prior_date"]:
+                    pdate = rel["prior_date"][:7]  # YYYY-MM
+                    prior = f"{prior}  ({pdate})"
+
+            if rel["expected"] is not None:
+                exp_val = rel["expected"]
+                ctype = rel["compare_type"]
+                if ctype == "change":
+                    expected = f"+{exp_val:,.0f}K"
+                elif ctype == "mom_pct":
+                    expected = f"+{exp_val:.1f}%"
+                elif exp_val >= 1000:
+                    expected = f"{exp_val:,.0f}"
+                else:
+                    expected = f"{exp_val:.2f}"
+                source = rel.get("source_text", "")[:60]
+                expected_cell = (
+                    f'<span class="exp-value">{expected}</span>'
+                    f'<div class="exp-source">{source}</div>'
+                )
+            else:
+                expected_cell = '<span class="muted">— not captured —</span>'
+
+            rows.append(f"""
+              <tr>
+                <td class="name-col">
+                  <div class="series-name">{rel['name']}</div>
+                  <div class="series-id">{rel['series_id']} · {rel['period']}</div>
+                </td>
+                <td class="val-col">{prior}</td>
+                <td class="exp-col">{expected_cell}</td>
+              </tr>""")
+
+        parts.append(f"""
+        <div class="upcoming-day">
+          <h3>{label}</h3>
+          <table class="data-table upcoming-table">
+            <thead>
+              <tr>
+                <th class="name-col">Release</th>
+                <th class="val-col">Prior</th>
+                <th class="exp-col">Consensus</th>
+              </tr>
+            </thead>
+            <tbody>{"".join(rows)}</tbody>
+          </table>
+        </div>""")
+
+    note = (
+        '<p class="muted" style="margin-top:1em">'
+        'Consensus expectations are captured separately via '
+        '<code>fetch_expectations.py</code>. Run that to populate '
+        'missing forecasts.</p>'
+    )
+    return "\n".join(parts) + note
 
 
 def _render_today(ctx) -> str:

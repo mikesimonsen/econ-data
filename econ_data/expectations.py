@@ -263,6 +263,99 @@ def _estimate_release_dates(schedule: str, ref: date,
     return results
 
 
+def _next_release_date(schedule: str, ref: date = None) -> date | None:
+    """Return the single most likely next release date (best estimate).
+
+    For exact schedules (first_friday, weekly_thu, last_tuesday), this is
+    precise.  For range schedules (mid_month, etc.) it's the midpoint.
+    """
+    if ref is None:
+        ref = date.today()
+    candidates = _estimate_release_dates(schedule, ref, lookahead=70)
+    # Filter to dates >= today, dedupe, sort
+    future = sorted({d for d in candidates if d >= ref})
+
+    if not future:
+        return None
+
+    # For range schedules, candidates may be many days in a row — pick the
+    # midpoint of the first contiguous block
+    if schedule in ("mid_month", "late_month", "early_month",
+                    "mid_month_late", "third_week", "fourth_week"):
+        # Group consecutive days and pick the middle of the first group
+        group = [future[0]]
+        for d in future[1:]:
+            if (d - group[-1]).days == 1:
+                group.append(d)
+            else:
+                break
+        return group[len(group) // 2]
+
+    return future[0]
+
+
+def get_upcoming_releases(days_ahead: int = 7,
+                          db_path: Path = DB_PATH) -> list[dict]:
+    """Return list of upcoming releases within the next N days.
+
+    Each entry: {series_id, name, release_date, period, prior_value,
+                 prior_date, expected, source_text, compare_type}
+    """
+    today = date.today()
+    cutoff = today + timedelta(days=days_ahead)
+
+    con = _connect(db_path)
+    expectations = {}
+    rows = con.execute(
+        "SELECT series_id, period, expected, compare_type, source_text "
+        "FROM expectations"
+    ).fetchall()
+    for sid, period, exp, ctype, source in rows:
+        expectations.setdefault(sid, {})[period] = {
+            "expected": exp,
+            "compare_type": ctype,
+            "source_text": source,
+        }
+
+    results = []
+    for spec in TRACKED:
+        release_date = _next_release_date(spec["schedule"], today)
+        if release_date is None or release_date > cutoff:
+            continue
+
+        # The reference period for the upcoming release
+        period = _reference_period(spec["series_id"], upcoming=True,
+                                   db_path=db_path)
+
+        # Get prior actual value
+        prior_row = con.execute(
+            "SELECT date, value FROM observations "
+            "WHERE series_id = ? ORDER BY date DESC LIMIT 1",
+            (spec["series_id"],),
+        ).fetchone()
+
+        prior_value = prior_row[1] if prior_row else None
+        prior_date = prior_row[0] if prior_row else None
+
+        exp_data = expectations.get(spec["series_id"], {}).get(period, {})
+
+        results.append({
+            "series_id": spec["series_id"],
+            "name": spec["name"],
+            "release_date": release_date.isoformat(),
+            "period": period,
+            "prior_value": prior_value,
+            "prior_date": prior_date,
+            "expected": exp_data.get("expected"),
+            "source_text": exp_data.get("source_text", ""),
+            "compare_type": spec["compare"],
+        })
+
+    con.close()
+    results.sort(key=lambda r: r["release_date"])
+    return results
+
+
 def _reference_period(series_id: str, upcoming: bool = True,
                       db_path: Path = DB_PATH) -> str:
     """Determine the reference period for consensus lookup.
