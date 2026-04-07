@@ -279,16 +279,19 @@ def _next_release_date(schedule: str, ref: date = None) -> date | None:
         return None
 
     # For range schedules, candidates may be many days in a row — pick the
-    # midpoint of the first contiguous block
+    # midpoint of the first contiguous block, then nudge to a weekday
     if schedule in ("mid_month", "late_month", "early_month",
                     "mid_month_late", "third_week", "fourth_week"):
-        # Group consecutive days and pick the middle of the first group
         group = [future[0]]
         for d in future[1:]:
             if (d - group[-1]).days == 1:
                 group.append(d)
             else:
                 break
+        # Filter to weekdays before picking the midpoint
+        weekdays = [d for d in group if d.weekday() < 5]
+        if weekdays:
+            return weekdays[len(weekdays) // 2]
         return group[len(group) // 2]
 
     return future[0]
