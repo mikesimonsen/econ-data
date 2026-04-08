@@ -496,6 +496,17 @@ groups:
         name: "10-Year Treasury Yield"
         units: percent
 
+  fed-funds:
+    name: "Federal Funds Rate"
+    signals: minimal
+    series:
+      - id: DFF
+        name: "Effective Federal Funds Rate (Daily)"
+        units: percent
+      - id: FEDFUNDS
+        name: "Effective Federal Funds Rate (Monthly Avg)"
+        units: percent
+
   sp500:
     name: "S&P 500 Index (Daily)"
     source: web

@@ -471,6 +471,9 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
     from econ_data.expectations import get_upcoming_releases
     upcoming_releases = get_upcoming_releases(days_ahead=7, db_path=db_path)
 
+    from econ_data.fed_expectations import render_fed_chart
+    fed_chart_html = render_fed_chart(db_path=db_path)
+
     # Build revision lookup by series_id
     revisions_by_series = {}
     for r in revisions:
@@ -504,6 +507,7 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
         analysis_html=_md_to_html(analysis_md, name_map) if analysis_md else "",
         housing_html=housing_html,
         upcoming_releases=upcoming_releases,
+        fed_chart_html=fed_chart_html,
         today_series=today_series,
         recent_series=recent_series,
         revisions_by_series=revisions_by_series,
@@ -526,6 +530,7 @@ def _render_page(**ctx) -> str:
     # Build sections — today_html must render first (it populates chart_csv_data)
     analysis_html = ctx.get("analysis_html", "")
     housing_html = ctx.get("housing_html", "")
+    fed_chart_html = ctx.get("fed_chart_html", "")
     today_html = _render_today(ctx)
     upcoming_html = _render_upcoming(ctx)
     recent_html = _render_recent(ctx)
@@ -562,6 +567,7 @@ def _render_page(**ctx) -> str:
 <nav>
   <a href="#today" class="active" onclick="showTab('today', this)">Today</a>
   <a href="#housing" onclick="showTab('housing', this)">Housing</a>
+  <a href="#fed" onclick="showTab('fed', this)">Fed</a>
   <a href="#upcoming" onclick="showTab('upcoming', this)">Upcoming</a>
   <a href="#recent" onclick="showTab('recent', this)">Recent Data Releases{_badge(recent_count)}</a>
   <a href="#deepdive" onclick="showTab('deepdive', this)">All Data</a>
@@ -578,6 +584,11 @@ def _render_page(**ctx) -> str:
 
   <section id="housing" class="tab-content">
     {f'<div class="analysis-block">{housing_html}</div>' if housing_html else '<p class="muted">Housing analysis not yet generated. Run the pipeline to generate.</p>'}
+  </section>
+
+  <section id="fed" class="tab-content">
+    <h2 style="margin-top:0">Federal Funds Rate &amp; Market Expectations</h2>
+    {fed_chart_html}
   </section>
 
   <section id="upcoming" class="tab-content">
@@ -1307,6 +1318,28 @@ def _render_all_groups(ctx) -> str:
 
 def _css() -> str:
     return """
+.fed-chart { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+.fed-target { font-size: 14px; color: var(--text-muted); margin: 0 0 1em; }
+.fed-target strong { color: var(--text); }
+.fed-legend { display: flex; flex-wrap: wrap; gap: 1em; margin: 1em 0; font-size: 12px; color: var(--text-muted); }
+.fed-legend span { display: inline-flex; align-items: center; gap: 0.4em; }
+.fed-legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.fed-legend .dot.solid { background: #2A8B3C; }
+.fed-legend .dot.hollow { background: #fff; border: 2px solid #888; }
+.fed-legend .line { display: inline-block; width: 24px; height: 2px; background: #2C5F8D; }
+.fed-legend .line.dashed { background: linear-gradient(to right, #2C5F8D 50%, transparent 50%); background-size: 6px 2px; }
+.fed-legend .bar { display: inline-block; width: 8px; height: 12px; opacity: 0.7; }
+.fed-legend .bar.green { background: #2A8B3C; }
+.fed-legend .bar.gray { background: #888; }
+.fed-legend .bar.red { background: #C13B3B; }
+.fed-table { border-collapse: collapse; width: 100%; margin-top: 0.5em; }
+.fed-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.fed-table td:first-child { width: 200px; color: var(--text); }
+.prob-chip { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; margin-right: 4px; font-weight: 500; }
+.prob-chip.chip-cut { background: rgba(42, 139, 60, 0.18); color: #3fb950; border: 1px solid rgba(42, 139, 60, 0.4); }
+.prob-chip.chip-hold { background: rgba(136, 136, 136, 0.18); color: #aaa; border: 1px solid rgba(136, 136, 136, 0.4); }
+.prob-chip.chip-hike { background: rgba(193, 59, 59, 0.18); color: #f85149; border: 1px solid rgba(193, 59, 59, 0.4); }
+
 :root {
   --bg: #0d1117;
   --surface: #161b22;
