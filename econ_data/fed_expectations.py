@@ -337,8 +337,22 @@ def render_fed_chart(db_path: Path = DB_PATH,
     if not rows:
         return "<p class='muted'>No Fed Funds data available.</p>"
 
-    hist_dates = [date.fromisoformat(r[0]) for r in rows]
-    hist_values = [r[1] for r in rows]
+    # Downsample daily DFF to weekly (Fridays) and snap to nearest
+    # 12.5bp to eliminate daily jitter within the target range.
+    raw_dates = [date.fromisoformat(r[0]) for r in rows]
+    raw_values = [r[1] for r in rows]
+    hist_dates = []
+    hist_values = []
+    prev_snap = None
+    for d, v in zip(raw_dates, raw_values):
+        snap = round(v * 8) / 8  # nearest 12.5bp
+        # Keep one point per week OR when the snapped value changes
+        if (not hist_dates
+                or snap != prev_snap
+                or (d - hist_dates[-1]).days >= 5):
+            hist_dates.append(d)
+            hist_values.append(snap)
+            prev_snap = snap
 
     # ── Compute implied forward path from probabilities ──────
     expectations = get_expectations(db_path)
@@ -409,9 +423,9 @@ def render_fed_chart(db_path: Path = DB_PATH,
     svg.append(f'<text x="{today_x:.1f}" y="{pad_top - 8}" '
                f'font-size="10" fill="#666" text-anchor="middle">today</text>')
 
-    # X-axis month labels (every 3 months)
+    # X-axis month labels (every 3 months, past only — future uses meeting labels)
     cur = x_start.replace(day=1)
-    while cur <= x_end:
+    while cur <= today:
         if cur.month in (1, 4, 7, 10):
             x = x_pos(cur)
             svg.append(f'<text x="{x:.1f}" y="{height - pad_bottom + 16}" '
