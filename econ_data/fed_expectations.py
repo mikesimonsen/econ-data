@@ -558,6 +558,32 @@ def render_fed_chart(db_path: Path = DB_PATH,
 
     svg.append("</svg>")
 
+    # ── Build CSV data for download ─────────────────────────
+    import csv as csv_mod, io
+    csv_buf = io.StringIO()
+    csv_writer = csv_mod.writer(csv_buf)
+    # Historical rows
+    csv_writer.writerow(["date", "type", "rate", "change_pp",
+                         "cut_prob", "hold_prob", "hike_prob"])
+    for d, v in zip(hist_dates, hist_values):
+        ch = changes.get(d.isoformat(), "")
+        csv_writer.writerow([d.isoformat(), "actual", f"{v:.4f}", ch, "", "", ""])
+    # Forward rows
+    for m in future_meetings:
+        ms = m.isoformat()
+        exp = expectations.get(ms)
+        implied = forward_dict.get(m, "")
+        if exp:
+            probs = exp["probabilities"]
+            cut = sum(p for bps, p in probs.items() if bps < 0)
+            hold = probs.get(0, 0)
+            hike = sum(p for bps, p in probs.items() if bps > 0)
+            csv_writer.writerow([ms, "forecast", f"{implied:.4f}" if implied else "",
+                                 "", f"{cut:.3f}", f"{hold:.3f}", f"{hike:.3f}"])
+        else:
+            csv_writer.writerow([ms, "forecast", "", "", "", "", ""])
+    fed_csv = csv_buf.getvalue()
+
     # ── Legend + meeting table ───────────────────────────────
     legend = (
         '<div class="fed-legend">'
@@ -616,7 +642,61 @@ def render_fed_chart(db_path: Path = DB_PATH,
                   f"<strong>{target[0]:.2f}% – {target[1]:.2f}%</strong></p>"
                   if target else "")
 
-    return target_str + "".join(svg) + legend + table_html
+    import json as json_mod
+    csv_json = json_mod.dumps(fed_csv)
+
+    export_buttons = (
+        '<div style="margin:0.5em 0">'
+        '<button class="btn-export" onclick="downloadFedCsv()">CSV</button> '
+        '<button class="btn-export" onclick="downloadFedPng()">PNG</button>'
+        '</div>'
+    )
+
+    chart_html = (
+        f'<div id="fed-chart-container">'
+        f'{"".join(svg)}'
+        f'</div>'
+    )
+
+    fed_js = (
+        f'<script>'
+        f'var fedChartCsv = {csv_json};'
+        f'function downloadFedCsv() {{'
+        f'  var b = new Blob([fedChartCsv], {{type:"text/csv"}});'
+        f'  var a = document.createElement("a");'
+        f'  a.href = URL.createObjectURL(b);'
+        f'  a.download = "fed_funds_rate.csv";'
+        f'  a.click();'
+        f'}}'
+        f'function downloadFedPng() {{'
+        f'  var svg = document.querySelector("#fed-chart-container svg");'
+        f'  if (!svg) return;'
+        f'  var svgData = new XMLSerializer().serializeToString(svg);'
+        f'  var canvas = document.createElement("canvas");'
+        f'  var rect = svg.getBoundingClientRect();'
+        f'  var scale = 2;'
+        f'  canvas.width = rect.width * scale;'
+        f'  canvas.height = rect.height * scale;'
+        f'  var ctx = canvas.getContext("2d");'
+        f'  ctx.scale(scale, scale);'
+        f'  var img = new Image();'
+        f'  img.onload = function() {{'
+        f'    ctx.fillStyle = "#fff";'
+        f'    ctx.fillRect(0, 0, rect.width, rect.height);'
+        f'    ctx.drawImage(img, 0, 0, rect.width, rect.height);'
+        f'    canvas.toBlob(function(blob) {{'
+        f'      var a = document.createElement("a");'
+        f'      a.href = URL.createObjectURL(blob);'
+        f'      a.download = "fed_funds_rate.png";'
+        f'      a.click();'
+        f'    }});'
+        f'  }};'
+        f'  img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));'
+        f'}}'
+        f'</script>'
+    )
+
+    return target_str + chart_html + export_buttons + legend + table_html + fed_js
 
 
 def fetch_all_upcoming(limit: int = 6, db_path: Path = DB_PATH) -> int:
