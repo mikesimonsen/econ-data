@@ -333,7 +333,11 @@ def _md_to_html(md: str, name_to_sid: dict = None) -> str:
             # Link series names/keywords to their rows
             if name_to_sid:
                 s = _linkify_series(s, name_to_sid)
-            html_lines.append(f'<p class="analysis-p">{s}</p>')
+            html_lines.append(
+                f'<p class="analysis-p">{s}'
+                f'<button class="btn-flag-inline" onclick="flagParagraph(this)" '
+                f'title="Flag for commentary">&#9873;</button></p>'
+            )
     return "\n".join(html_lines)
 
 
@@ -570,6 +574,7 @@ def _render_page(**ctx) -> str:
   <a href="#fed" onclick="showTab('fed', this)">Fed</a>
   <a href="#upcoming" onclick="showTab('upcoming', this)">Upcoming</a>
   <a href="#recent" onclick="showTab('recent', this)">Recent Data Releases{_badge(recent_count)}</a>
+  <a href="#flagged" onclick="showTab('flagged', this)">Flagged <span id="flagged-badge" class="badge" style="display:none">0</span></a>
   <a href="#deepdive" onclick="showTab('deepdive', this)">All Data</a>
   <div class="search-box">
     <input type="text" id="search-input" placeholder="Search series..." oninput="filterSeries(this.value)">
@@ -597,6 +602,11 @@ def _render_page(**ctx) -> str:
 
   <section id="recent" class="tab-content">
     {recent_html}
+  </section>
+
+  <section id="flagged" class="tab-content">
+    <h2 style="margin-top:0">Flagged for Commentary</h2>
+    <div id="flagged-list"><p class="muted">No items flagged yet. Click the flag icon next to any data row or analysis paragraph to save it here.</p></div>
   </section>
 
   <section id="deepdive" class="tab-content">
@@ -741,7 +751,7 @@ def _render_series_table(series_list, ctx, show_signals=True) -> str:
               <td class="chg-col">{_format_change(a['yoy_pct'], is_pct)}</td>
               <td class="release-col">{released}</td>
               <td class="signal-col">{rev_tag}{signal_tags}</td>
-              <td class="export-col"><button class="btn-export" onclick="event.stopPropagation(); downloadCsv('{sid}')">CSV</button></td>
+              <td class="export-col"><button class="btn-flag" onclick="event.stopPropagation(); flagSeriesFromRow(this)" title="Flag for commentary">&#9873;</button><button class="btn-export" onclick="event.stopPropagation(); downloadCsv('{sid}')">CSV</button></td>
             </tr>""")
             if revision_html:
                 rows.append(f"""
@@ -1279,7 +1289,7 @@ def _render_all_groups(ctx) -> str:
               <td class="chg-col">{_format_change(a['yoy_pct'], is_pct)}</td>
               <td class="release-col">{released}</td>
               <td class="signal-col">{signal_tags} {trend}</td>
-              <td class="export-col"><button class="btn-export" onclick="event.stopPropagation(); downloadCsv('{sid}')">CSV</button></td>
+              <td class="export-col"><button class="btn-flag" onclick="event.stopPropagation(); flagSeriesFromRow(this)" title="Flag for commentary">&#9873;</button><button class="btn-export" onclick="event.stopPropagation(); downloadCsv('{sid}')">CSV</button></td>
             </tr>
             <tr class="detail-row" id="detail-{sid}" style="display:none">
               <td colspan="9">
@@ -1318,6 +1328,24 @@ def _render_all_groups(ctx) -> str:
 
 def _css() -> str:
     return """
+.btn-flag { background: none; border: none; cursor: pointer; font-size: 14px; padding: 2px 6px; opacity: 0.3; color: var(--text-muted); }
+.btn-flag:hover { opacity: 1; color: var(--amber); }
+.btn-flag-inline { background: none; border: none; cursor: pointer; font-size: 12px; padding: 0 4px; opacity: 0; color: var(--text-muted); margin-left: 4px; vertical-align: middle; }
+.analysis-p:hover .btn-flag-inline { opacity: 0.4; }
+.btn-flag-inline:hover { opacity: 1 !important; color: var(--amber) !important; }
+.flagged-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; position: relative; }
+.flagged-item .flagged-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+.flagged-item .flagged-text { font-size: 14px; color: var(--text); line-height: 1.5; }
+.flagged-item .flagged-data { font-family: monospace; font-size: 13px; color: var(--accent); }
+.flagged-item .flagged-note { margin-top: 8px; }
+.flagged-item .flagged-note textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 6px; font-size: 13px; resize: vertical; min-height: 40px; }
+.btn-unflag { position: absolute; top: 8px; right: 8px; background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 16px; padding: 4px 8px; }
+.btn-unflag:hover { color: var(--red); }
+.flagged-stale { opacity: 0.5; border-color: var(--border); }
+.flagged-age { font-size: 11px; padding: 2px 6px; border-radius: 8px; margin-left: 6px; }
+.age-fresh { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+.age-aging { background: rgba(210, 153, 34, 0.15); color: var(--amber); }
+.age-stale { background: rgba(248, 81, 73, 0.15); color: var(--red); }
 .fed-chart { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
 .fed-target { font-size: 14px; color: var(--text-muted); margin: 0 0 1em; }
 .fed-target strong { color: var(--text); }
@@ -1912,4 +1940,126 @@ document.addEventListener('keydown', function(e) {
     }
   }
 });
+
+// --- Flag for commentary ---
+var FLAG_KEY = 'econ_flagged_items';
+
+function getFlags() {
+  try { return JSON.parse(localStorage.getItem(FLAG_KEY) || '[]'); }
+  catch(e) { return []; }
+}
+function saveFlags(flags) {
+  localStorage.setItem(FLAG_KEY, JSON.stringify(flags));
+  renderFlagged();
+}
+
+function flagSeriesFromRow(btn) {
+  var row = btn.closest('.series-row');
+  if (!row) return;
+  var sid = row.dataset.sid;
+  var name = row.querySelector('.series-name').textContent;
+  var cells = row.querySelectorAll('td');
+  var dateStr = cells[2] ? cells[2].textContent.trim() : '';
+  var value = cells[3] ? cells[3].textContent.trim() : '';
+  var period = cells[4] ? cells[4].textContent.trim() : '';
+  var yoy = cells[5] ? cells[5].textContent.trim() : '';
+  var flags = getFlags();
+  flags.unshift({
+    id: 'series-' + sid + '-' + Date.now(),
+    type: 'series',
+    series_id: sid,
+    text: name + ' (' + sid + ')',
+    data: dateStr + '  ' + value + '  period ' + period + '  YoY ' + yoy,
+    flagged_at: new Date().toISOString(),
+    note: ''
+  });
+  saveFlags(flags);
+  btn.style.color = 'var(--amber)';
+  btn.style.opacity = '1';
+}
+
+function flagParagraph(btn) {
+  var p = btn.closest('p');
+  if (!p) return;
+  var text = p.textContent.replace(/\s*⚑\s*$/, '').trim();
+  // Truncate if too long
+  if (text.length > 300) text = text.substring(0, 300) + '...';
+  var section = p.closest('.tab-content');
+  var context = section ? section.id : 'analysis';
+  var flags = getFlags();
+  flags.unshift({
+    id: 'para-' + Date.now(),
+    type: 'paragraph',
+    text: text,
+    context: context,
+    flagged_at: new Date().toISOString(),
+    note: ''
+  });
+  saveFlags(flags);
+  btn.style.color = 'var(--amber)';
+  btn.style.opacity = '1';
+}
+
+function unflag(id) {
+  var flags = getFlags().filter(function(f) { return f.id !== id; });
+  saveFlags(flags);
+}
+
+function updateNote(id, note) {
+  var flags = getFlags();
+  flags.forEach(function(f) { if (f.id === id) f.note = note; });
+  saveFlags(flags);
+}
+
+function renderFlagged() {
+  var flags = getFlags();
+  var container = document.getElementById('flagged-list');
+  var badge = document.getElementById('flagged-badge');
+
+  if (badge) {
+    if (flags.length > 0) {
+      badge.textContent = flags.length;
+      badge.style.display = 'inline';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  if (!container) return;
+  if (flags.length === 0) {
+    container.innerHTML = '<p class="muted">No items flagged yet. Click the flag icon next to any data row or analysis paragraph to save it here.</p>';
+    return;
+  }
+
+  var now = Date.now();
+  var html = '';
+  flags.forEach(function(f) {
+    var flagDate = new Date(f.flagged_at);
+    var ageDays = Math.floor((now - flagDate.getTime()) / 86400000);
+    var ageLabel, ageClass;
+    if (ageDays <= 2) { ageLabel = 'today'; ageClass = 'age-fresh'; }
+    else if (ageDays <= 7) { ageLabel = ageDays + 'd ago'; ageClass = 'age-fresh'; }
+    else if (ageDays <= 14) { ageLabel = ageDays + 'd ago'; ageClass = 'age-aging'; }
+    else { ageLabel = ageDays + 'd ago'; ageClass = 'age-stale'; }
+    var staleClass = ageDays > 14 ? ' flagged-stale' : '';
+
+    var dataLine = f.data ? '<div class="flagged-data">' + f.data + '</div>' : '';
+    html += '<div class="flagged-item' + staleClass + '" data-flag-id="' + f.id + '">';
+    html += '<button class="btn-unflag" onclick="unflag(\'' + f.id + '\')" title="Remove">&times;</button>';
+    html += '<div class="flagged-meta">';
+    html += flagDate.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
+    html += ' <span class="flagged-age ' + ageClass + '">' + ageLabel + '</span>';
+    if (f.type === 'series') html += ' &middot; data series';
+    if (f.type === 'paragraph') html += ' &middot; ' + (f.context || 'analysis');
+    html += '</div>';
+    html += '<div class="flagged-text">' + f.text + '</div>';
+    html += dataLine;
+    html += '<div class="flagged-note"><textarea placeholder="Add a note..." oninput="updateNote(\'' + f.id + '\', this.value)">' + (f.note || '') + '</textarea></div>';
+    html += '</div>';
+  });
+  container.innerHTML = html;
+}
+
+// Render on page load
+document.addEventListener('DOMContentLoaded', renderFlagged);
 """
