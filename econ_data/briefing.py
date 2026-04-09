@@ -2050,7 +2050,7 @@ function renderFlagged() {
 
     var dataLine = f.data ? '<div class="flagged-data">' + f.data + '</div>' : '';
     html += '<div class="flagged-item' + staleClass + '" data-flag-id="' + f.id + '">';
-    html += '<button class="btn-unflag" onclick="unflag(\'' + f.id + '\')" title="Remove">&times;</button>';
+    html += '<button class="btn-unflag" onclick="unflag(\\'' + f.id + '\\')" title="Remove">&times;</button>';
     html += '<div class="flagged-meta">';
     html += flagDate.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'});
     html += ' <span class="flagged-age ' + ageClass + '">' + ageLabel + '</span>';
@@ -2059,7 +2059,7 @@ function renderFlagged() {
     html += '</div>';
     html += '<div class="flagged-text">' + f.text + '</div>';
     html += dataLine;
-    html += '<div class="flagged-note"><textarea placeholder="Add a note..." oninput="updateNote(\'' + f.id + '\', this.value)">' + (f.note || '') + '</textarea></div>';
+    html += '<div class="flagged-note"><textarea placeholder="Add a note..." oninput="updateNote(\\'' + f.id + '\\', this.value)">' + (f.note || '') + '</textarea></div>';
     html += '</div>';
   });
   container.innerHTML = html;
