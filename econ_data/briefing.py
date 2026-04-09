@@ -2013,7 +2013,8 @@ function unflag(id) {
 function updateNote(id, note) {
   var flags = getFlags();
   flags.forEach(function(f) { if (f.id === id) f.note = note; });
-  saveFlags(flags);
+  // Save without re-rendering (avoid destroying the active textarea)
+  localStorage.setItem(FLAG_KEY, JSON.stringify(flags));
 }
 
 function renderFlagged() {
