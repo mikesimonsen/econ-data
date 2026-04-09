@@ -171,6 +171,20 @@ groups:
         name: "Median Duration of Unemployment (Weeks)"
         inverted: true
 
+  wage-growth:
+    name: "Atlanta Fed Wage Growth Tracker"
+    signals: minimal
+    series:
+      - id: FRBATLWGT3MMAUMHWGO
+        name: "Wage Growth 3-Month MA (Headline)"
+        units: percent
+      - id: FRBATLWGTUMHWGO
+        name: "Wage Growth Monthly"
+        units: percent
+      - id: FRBATLWGT12MMUMHGO
+        name: "Wage Growth 12-Month MA"
+        units: percent
+
   productivity:
     name: "Productivity (BLS, Quarterly)"
     signals: minimal
