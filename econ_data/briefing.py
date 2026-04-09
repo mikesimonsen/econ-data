@@ -1942,6 +1942,11 @@ document.addEventListener('keydown', function(e) {
 });
 
 // --- Flag for commentary ---
+// TEMPORARY: Flagged items are stored in browser localStorage.
+// This works while the app runs locally and the user accesses the page
+// from a single browser. If/when this system moves to cloud hosting
+// with public access, replace localStorage with proper database storage
+// (e.g. a flags table in SQLite served via an API endpoint).
 var FLAG_KEY = 'econ_flagged_items';
 
 function getFlags() {
