@@ -1913,10 +1913,15 @@ function filterSeries(query) {
     g.style.display = anyVisible ? '' : 'none';
   });
 
-  // Hide tab sections with no visible groups
+  // Hide tab sections with no visible content
   tabs.forEach(function(t) {
     var groups = t.querySelectorAll('.group-block');
-    if (groups.length === 0) return; // e.g. today with "no data" message
+    if (groups.length === 0) {
+      // Tabs without data tables (Fed, Housing, Flagged, Upcoming)
+      // are hidden during search — they don't have searchable series
+      t.style.display = 'none';
+      return;
+    }
     var anyGroupVisible = false;
     groups.forEach(function(g) { if (g.style.display !== 'none') anyGroupVisible = true; });
     t.style.display = anyGroupVisible ? '' : 'none';
