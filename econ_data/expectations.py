@@ -14,7 +14,7 @@ import json
 import os
 import sqlite3
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import anthropic
@@ -149,152 +149,216 @@ CREATE TABLE IF NOT EXISTS expectations (
     source_text  TEXT,
     fetched_at   TEXT    NOT NULL,
     PRIMARY KEY (series_id, period)
-)
+);
+CREATE TABLE IF NOT EXISTS release_calendar (
+    release_date TEXT    NOT NULL,
+    report       TEXT    NOT NULL,
+    series_ids   TEXT    NOT NULL,
+    confirmed    INTEGER DEFAULT 1,
+    updated_at   TEXT    NOT NULL,
+    PRIMARY KEY (release_date, report)
+);
 """
+
+# Confirmed release dates from agency websites (seeded once, refreshed weekly).
+# Claims (ICSA) is every Thursday and doesn't need calendar entries.
+SEED_CALENDAR = [
+    # CPI
+    ("2026-04-10", "CPI", "CPIAUCSL,CPILFESL"),
+    ("2026-05-12", "CPI", "CPIAUCSL,CPILFESL"),
+    # Employment Situation
+    ("2026-05-08", "Employment Situation", "PAYEMS,UNRATE,CES0500000003"),
+    # JOLTS
+    ("2026-05-05", "JOLTS", "JTSJOL"),
+    # PCE / Personal Income
+    ("2026-04-30", "Personal Income/Outlays", "PCEPI,PCEPILFE"),
+    # Housing Starts & Permits
+    ("2026-04-29", "Housing Starts & Permits", "HOUST,PERMIT"),
+    # Existing Home Sales
+    ("2026-04-13", "Existing Home Sales", "EXHOSLUSM495S"),
+    # New Home Sales
+    ("2026-05-05", "New Home Sales", "HSN1F"),
+    # Consumer Confidence
+    ("2026-04-28", "Consumer Confidence", "CB_CCI"),
+]
 
 
 def _connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
     con = sqlite3.connect(db_path)
-    con.execute(CREATE_TABLE)
+    con.executescript(CREATE_TABLE)
     return con
 
 
-def _next_release_soon(schedule: str, lookahead_days: int = 3) -> bool:
-    """Check if a release is expected within the next N days."""
+def seed_calendar(db_path: Path = DB_PATH) -> int:
+    """Insert seed release dates if the calendar is empty."""
+    con = _connect(db_path)
+    existing = con.execute("SELECT COUNT(*) FROM release_calendar").fetchone()[0]
+    if existing > 0:
+        con.close()
+        return 0
+    now = datetime.now().isoformat(timespec="seconds")
+    for release_date, report, series_ids in SEED_CALENDAR:
+        con.execute(
+            "INSERT OR IGNORE INTO release_calendar "
+            "(release_date, report, series_ids, confirmed, updated_at) "
+            "VALUES (?, ?, ?, 1, ?)",
+            (release_date, report, series_ids, now),
+        )
+    con.commit()
+    count = con.execute("SELECT COUNT(*) FROM release_calendar").fetchone()[0]
+    con.close()
+    return count
+
+
+def get_calendar_releases(days_ahead: int = 7,
+                          db_path: Path = DB_PATH) -> list[dict]:
+    """Return upcoming releases from the calendar within the next N days.
+
+    Also includes weekly claims (every Thursday, no calendar entry needed).
+    """
     today = date.today()
-    target_dates = _estimate_release_dates(schedule, today, lookahead_days)
-    return any(0 <= (d - today).days <= lookahead_days for d in target_dates)
+    cutoff = (today + timedelta(days=days_ahead)).isoformat()
 
+    seed_calendar(db_path)
 
-def _estimate_release_dates(schedule: str, ref: date,
-                            lookahead: int) -> list[date]:
-    """Estimate upcoming release dates based on schedule type."""
+    con = _connect(db_path)
+    rows = con.execute(
+        "SELECT release_date, report, series_ids FROM release_calendar "
+        "WHERE release_date >= ? AND release_date <= ? "
+        "ORDER BY release_date",
+        (today.isoformat(), cutoff),
+    ).fetchall()
+    con.close()
+
     results = []
-    window_end = ref + timedelta(days=lookahead)
+    for release_date, report, series_ids in rows:
+        results.append({
+            "release_date": release_date,
+            "report": report,
+            "series_ids": series_ids.split(","),
+        })
 
-    if schedule == "first_friday":
-        # First Friday of the current and next month
-        for month_offset in range(0, 2):
-            m = ref.month + month_offset
-            y = ref.year + (m - 1) // 12
-            m = ((m - 1) % 12) + 1
-            d = date(y, m, 1)
-            while d.weekday() != 4:  # Friday
-                d += timedelta(days=1)
-            results.append(d)
+    # Add weekly claims Thursdays
+    d = today
+    while d <= date.fromisoformat(cutoff):
+        if d.weekday() == 3:  # Thursday
+            results.append({
+                "release_date": d.isoformat(),
+                "report": "Weekly Jobless Claims",
+                "series_ids": ["ICSA"],
+            })
+        d += timedelta(days=1)
 
-    elif schedule == "weekly_thu":
-        # Every Thursday
-        d = ref
-        while d <= window_end:
-            if d.weekday() == 3:  # Thursday
-                results.append(d)
-            d += timedelta(days=1)
-
-    elif schedule == "mid_month":
-        for month_offset in range(0, 2):
-            m = ref.month + month_offset
-            y = ref.year + (m - 1) // 12
-            m = ((m - 1) % 12) + 1
-            for day in range(10, 15):
-                results.append(date(y, m, day))
-
-    elif schedule == "late_month":
-        for month_offset in range(0, 2):
-            m = ref.month + month_offset
-            y = ref.year + (m - 1) // 12
-            m = ((m - 1) % 12) + 1
-            for day in range(25, 32):
-                try:
-                    results.append(date(y, m, day))
-                except ValueError:
-                    pass
-
-    elif schedule == "early_month":
-        for month_offset in range(0, 2):
-            m = ref.month + month_offset
-            y = ref.year + (m - 1) // 12
-            m = ((m - 1) % 12) + 1
-            for day in range(1, 11):
-                results.append(date(y, m, day))
-
-    elif schedule == "mid_month_late":
-        for month_offset in range(0, 2):
-            m = ref.month + month_offset
-            y = ref.year + (m - 1) // 12
-            m = ((m - 1) % 12) + 1
-            for day in range(16, 21):
-                results.append(date(y, m, day))
-
-    elif schedule == "third_week":
-        for month_offset in range(0, 2):
-            m = ref.month + month_offset
-            y = ref.year + (m - 1) // 12
-            m = ((m - 1) % 12) + 1
-            for day in range(19, 25):
-                results.append(date(y, m, day))
-
-    elif schedule == "fourth_week":
-        for month_offset in range(0, 2):
-            m = ref.month + month_offset
-            y = ref.year + (m - 1) // 12
-            m = ((m - 1) % 12) + 1
-            for day in range(23, 29):
-                try:
-                    results.append(date(y, m, day))
-                except ValueError:
-                    pass
-
-    elif schedule == "last_tuesday":
-        for month_offset in range(0, 2):
-            m = ref.month + month_offset
-            y = ref.year + (m - 1) // 12
-            m = ((m - 1) % 12) + 1
-            # Find last Tuesday
-            if m == 12:
-                last_day = date(y + 1, 1, 1) - timedelta(days=1)
-            else:
-                last_day = date(y, m + 1, 1) - timedelta(days=1)
-            d = last_day
-            while d.weekday() != 1:  # Tuesday
-                d -= timedelta(days=1)
-            results.append(d)
-
+    results.sort(key=lambda r: r["release_date"])
     return results
 
 
-def _next_release_date(schedule: str, ref: date = None) -> date | None:
-    """Return the single most likely next release date (best estimate).
+def refresh_release_calendar(db_path: Path = DB_PATH) -> int:
+    """Use Claude web search to discover/update release dates.
 
-    For exact schedules (first_friday, weekly_thu, last_tuesday), this is
-    precise.  For range schedules (mid_month, etc.) it's the midpoint.
+    Searches for upcoming release dates for each tracked report and
+    upserts into the release_calendar table. Run weekly (e.g., Mondays).
+    Returns count of dates added/updated.
     """
-    if ref is None:
-        ref = date.today()
-    candidates = _estimate_release_dates(schedule, ref, lookahead=70)
-    # Filter to dates >= today, dedupe, sort
-    future = sorted({d for d in candidates if d >= ref})
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return 0
 
-    if not future:
-        return None
+    # Group series into reports
+    reports = {}
+    for spec in TRACKED:
+        if spec["schedule"] == "weekly_thu":
+            continue
+        sid = spec["series_id"]
+        if sid in ("PAYEMS", "UNRATE", "CES0500000003"):
+            name = "Employment Situation"
+        elif sid in ("CPIAUCSL", "CPILFESL"):
+            name = "CPI"
+        elif sid in ("PCEPI", "PCEPILFE"):
+            name = "Personal Income/Outlays"
+        elif sid in ("HOUST", "PERMIT"):
+            name = "Housing Starts & Permits"
+        else:
+            name = spec["name"]
+        if name not in reports:
+            reports[name] = []
+        if sid not in reports[name]:
+            reports[name].append(sid)
 
-    # For range schedules, candidates may be many days in a row — pick the
-    # midpoint of the first contiguous block, then nudge to a weekday
-    if schedule in ("mid_month", "late_month", "early_month",
-                    "mid_month_late", "third_week", "fourth_week"):
-        group = [future[0]]
-        for d in future[1:]:
-            if (d - group[-1]).days == 1:
-                group.append(d)
-            else:
-                break
-        # Filter to weekdays before picking the midpoint
-        weekdays = [d for d in group if d.weekday() < 5]
-        if weekdays:
-            return weekdays[len(weekdays) // 2]
-        return group[len(group) // 2]
+    client = anthropic.Anthropic(api_key=api_key, timeout=60.0)
+    con = _connect(db_path)
+    now = datetime.now().isoformat(timespec="seconds")
+    updated = 0
 
-    return future[0]
+    for report_name, series_ids in reports.items():
+        series_str = ",".join(series_ids)
+        print(f"  Checking calendar for {report_name}...")
+
+        try:
+            msg = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=400,
+                tools=[{
+                    "type": "web_search_20250305",
+                    "name": "web_search",
+                    "max_uses": 2,
+                }],
+                system=(
+                    "Search for the next official release date for the given "
+                    "U.S. economic report. Return ONLY a JSON array of dates "
+                    "in YYYY-MM-DD format. Include all confirmed upcoming "
+                    "dates you can find (up to 3). Example: [\"2026-05-12\", "
+                    "\"2026-06-10\"]. If you cannot find any confirmed dates, "
+                    "return []."
+                ),
+                messages=[{
+                    "role": "user",
+                    "content": f"What are the next confirmed release dates "
+                               f"for the U.S. {report_name} report? "
+                               f"Search the official agency website.",
+                }],
+            )
+        except Exception as e:
+            print(f"    Search failed: {e}")
+            continue
+
+        import re
+        full_text = "\n".join(
+            b.text for b in msg.content if hasattr(b, "text")
+        )
+        match = re.search(r'\[([^\[\]]*"20\d{2}-\d{2}-\d{2}"[^\[\]]*)\]',
+                          full_text)
+        if not match:
+            print(f"    No dates found")
+            time.sleep(1)
+            continue
+
+        try:
+            dates = json.loads(match.group())
+        except (json.JSONDecodeError, ValueError):
+            print(f"    Parse error")
+            time.sleep(1)
+            continue
+
+        for d in dates:
+            try:
+                date.fromisoformat(d)
+            except ValueError:
+                continue
+            con.execute(
+                "INSERT OR REPLACE INTO release_calendar "
+                "(release_date, report, series_ids, confirmed, updated_at) "
+                "VALUES (?, ?, ?, 1, ?)",
+                (d, report_name, series_str, now),
+            )
+            updated += 1
+            print(f"    → {d}")
+
+        time.sleep(1)
+
+    con.commit()
+    con.close()
+    return updated
 
 
 def get_upcoming_releases(days_ahead: int = 7,
@@ -320,48 +384,49 @@ def get_upcoming_releases(days_ahead: int = 7,
             "source_text": source,
         }
 
+    # Use the release calendar (not the old schedule estimator)
+    calendar = get_calendar_releases(days_ahead, db_path)
+
+    # Build a lookup: series_id → TRACKED spec
+    spec_by_sid = {s["series_id"]: s for s in TRACKED}
+
     results = []
-    for spec in TRACKED:
-        release_date = _next_release_date(spec["schedule"], today)
-        if release_date is None or release_date > cutoff:
-            continue
+    seen = set()  # avoid duplicates (same series from multiple calendar entries)
 
-        # The reference period for the upcoming release
-        period = _reference_period(spec["series_id"], upcoming=True,
-                                   db_path=db_path)
-
-        # Get prior actual value and check if recently captured
-        prior_row = con.execute(
-            "SELECT date, value, captured_at FROM observations "
-            "WHERE series_id = ? ORDER BY date DESC LIMIT 1",
-            (spec["series_id"],),
-        ).fetchone()
-
-        # Skip if the latest data was captured recently — the release
-        # already happened and the next one is ~a month away.
-        # (14 days for monthly, 5 days for weekly claims)
-        if prior_row and prior_row[2]:
-            captured = date.fromisoformat(prior_row[2][:10])
-            recency = 5 if spec["schedule"] == "weekly_thu" else 14
-            if (today - captured).days < recency:
+    for entry in calendar:
+        release_date_str = entry["release_date"]
+        for sid in entry["series_ids"]:
+            if sid in seen:
+                continue
+            seen.add(sid)
+            spec = spec_by_sid.get(sid)
+            if not spec:
                 continue
 
-        prior_value = prior_row[1] if prior_row else None
-        prior_date = prior_row[0] if prior_row else None
+            period = _reference_period(sid, upcoming=True, db_path=db_path)
 
-        exp_data = expectations.get(spec["series_id"], {}).get(period, {})
+            prior_row = con.execute(
+                "SELECT date, value FROM observations "
+                "WHERE series_id = ? ORDER BY date DESC LIMIT 1",
+                (sid,),
+            ).fetchone()
 
-        results.append({
-            "series_id": spec["series_id"],
-            "name": spec["name"],
-            "release_date": release_date.isoformat(),
-            "period": period,
-            "prior_value": prior_value,
-            "prior_date": prior_date,
-            "expected": exp_data.get("expected"),
-            "source_text": exp_data.get("source_text", ""),
-            "compare_type": spec["compare"],
-        })
+            prior_value = prior_row[1] if prior_row else None
+            prior_date = prior_row[0] if prior_row else None
+
+            exp_data = expectations.get(sid, {}).get(period, {})
+
+            results.append({
+                "series_id": sid,
+                "name": spec["name"],
+                "release_date": release_date_str,
+                "period": period,
+                "prior_value": prior_value,
+                "prior_date": prior_date,
+                "expected": exp_data.get("expected"),
+                "source_text": exp_data.get("source_text", ""),
+                "compare_type": spec["compare"],
+            })
 
     con.close()
     results.sort(key=lambda r: r["release_date"])
@@ -552,12 +617,21 @@ def fetch_expectations(lookahead_days: int = 3,
     con = _connect(db_path)
     now = datetime.now().isoformat(timespec="seconds")
 
-    for spec in TRACKED:
-        if not _next_release_soon(spec["schedule"], lookahead_days):
+    # Use the release calendar to determine what's coming
+    calendar = get_calendar_releases(lookahead_days, db_path)
+    upcoming_sids = set()
+    for entry in calendar:
+        for sid in entry["series_ids"]:
+            upcoming_sids.add(sid)
+
+    spec_by_sid = {s["series_id"]: s for s in TRACKED}
+
+    for sid in upcoming_sids:
+        spec = spec_by_sid.get(sid)
+        if not spec:
             continue
 
-        period = _reference_period(spec["series_id"], upcoming=True,
-                                   db_path=db_path)
+        period = _reference_period(sid, upcoming=True, db_path=db_path)
 
         if _already_fetched(spec["series_id"], period, db_path):
             continue

@@ -9,6 +9,7 @@ Usage:
     python fetch_expectations.py --days 5     # look ahead 5 days
     python fetch_expectations.py --all        # fetch for all tracked series regardless of schedule
     python fetch_expectations.py --show       # show stored expectations
+    python fetch_expectations.py --refresh-calendar  # update release calendar via web search
 """
 import argparse
 from datetime import datetime
@@ -16,6 +17,7 @@ from datetime import datetime
 from econ_data.expectations import (
     TRACKED, fetch_expectations, get_expectations,
     _reference_period, _search_consensus, _already_fetched, _connect,
+    refresh_release_calendar, get_calendar_releases,
 )
 
 
@@ -96,9 +98,18 @@ if __name__ == "__main__":
                         help="Fetch for all tracked series regardless of schedule")
     parser.add_argument("--show", action="store_true",
                         help="Show stored expectations")
+    parser.add_argument("--refresh-calendar", action="store_true",
+                        help="Update release calendar via web search")
     args = parser.parse_args()
 
-    if args.show:
+    if args.refresh_calendar:
+        log("=== Refreshing release calendar ===")
+        n = refresh_release_calendar()
+        log(f"Updated {n} calendar entries")
+        log("Upcoming releases:")
+        for r in get_calendar_releases(days_ahead=30):
+            print(f"  {r['release_date']}  {r['report']}")
+    elif args.show:
         show_expectations()
     elif args.all:
         log("=== Fetching consensus for ALL tracked series ===")
