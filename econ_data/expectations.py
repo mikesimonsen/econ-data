@@ -330,12 +330,21 @@ def get_upcoming_releases(days_ahead: int = 7,
         period = _reference_period(spec["series_id"], upcoming=True,
                                    db_path=db_path)
 
-        # Get prior actual value
+        # Get prior actual value and check if recently captured
         prior_row = con.execute(
-            "SELECT date, value FROM observations "
+            "SELECT date, value, captured_at FROM observations "
             "WHERE series_id = ? ORDER BY date DESC LIMIT 1",
             (spec["series_id"],),
         ).fetchone()
+
+        # Skip if the latest data was captured recently — the release
+        # already happened and the next one is ~a month away.
+        # (14 days for monthly, 5 days for weekly claims)
+        if prior_row and prior_row[2]:
+            captured = date.fromisoformat(prior_row[2][:10])
+            recency = 5 if spec["schedule"] == "weekly_thu" else 14
+            if (today - captured).days < recency:
+                continue
 
         prior_value = prior_row[1] if prior_row else None
         prior_date = prior_row[0] if prior_row else None
