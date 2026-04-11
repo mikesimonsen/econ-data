@@ -599,6 +599,12 @@ groups:
       - id: MBA_PURCHASE
         name: "MBA Purchase Index"
         units: "index (Mar 1990=100)"
+      - id: MBA_PURCHASE_4WK
+        name: "MBA Purchase Index 4-Week Avg"
+        units: "index (Mar 1990=100)"
+      - id: MBA_PURCHASE_13WK
+        name: "MBA Purchase Index 13-Week Avg"
+        units: "index (Mar 1990=100)"
 
   mortgage-intent:
     name: "Mortgage Intent Index (Xactus)"
@@ -606,6 +612,12 @@ groups:
     series:
       - id: XACTUS_MII
         name: "Xactus Mortgage Intent Index"
+        units: index
+      - id: XACTUS_MII_4WK
+        name: "Xactus MII 4-Week Avg"
+        units: index
+      - id: XACTUS_MII_13WK
+        name: "Xactus MII 13-Week Avg"
         units: index
 
   altos-inventory:

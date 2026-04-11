@@ -2,6 +2,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from econ_data.calc_rolling import compute_rolling
 from econ_data.calc_spread import compute_spread
 from econ_data.calculations import compute_all
 from econ_data.config import load, all_series, fred_series
@@ -128,6 +129,13 @@ if __name__ == "__main__":
     result["counts"].update(spread_result["counts"])
     if spread_result["new"]:
         save(spread_result["new"])
+
+    # Compute rolling averages (MBA, Xactus)
+    rolling_result = compute_rolling(last_dates=get_last_dates())
+    result["new"].extend(rolling_result["new"])
+    result["counts"].update(rolling_result["counts"])
+    if rolling_result["new"]:
+        save(rolling_result["new"])
 
     counts = result["counts"]
 
