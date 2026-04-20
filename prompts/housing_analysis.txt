@@ -44,6 +44,7 @@ RIGHT NOW, these themes are especially important:
 == RULES ==
 - Use specific numbers from the data, not vague descriptions
 - Every claim must be traceable to a data point in the snapshot
+- NSA (not seasonally adjusted) monthly series — including the Redfin NSA series (REDFIN_PENDING, REDFIN_SOLD, REDFIN_NEW_LISTINGS, REDFIN_INVENTORY) and NSA existing home sales — have period (MoM) changes dominated by seasonality. Do NOT highlight their MoM moves as signals (a Feb→Mar jump is normal). Use the _SA variants for MoM commentary; use YoY for the NSA series. Never place a large NSA period change next to a YoY claim — readers will conflate them.
 - Don't repeat what the daily analysis already covers — this section adds the HOUSING LENS
 - Don't hedge every statement. If the data is directional, say so
 - Flag article ideas explicitly: "Article idea: ..." when a theme is strong enough to write about

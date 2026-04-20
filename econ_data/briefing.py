@@ -10,6 +10,7 @@ import base64
 import csv
 import io
 import json
+import math
 import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -44,6 +45,9 @@ _GROUP_SEARCH_TAGS = {
     "altos-inventory": "housing inventory listings supply altos",
     "altos-new-listings": "housing new listings supply altos",
     "altos-new-pending": "housing pending sales contracts altos",
+    "realtor-dot-com": "housing inventory listings pending price realtor",
+    "realtor-dot-com-extra": "housing pending ratio price reduced realtor",
+    "redfin": "housing pending sold listings inventory price redfin",
 }
 
 _FAVICON_CACHE = None
@@ -58,6 +62,61 @@ def _favicon_b64() -> str:
         else:
             _FAVICON_CACHE = ""
     return _FAVICON_CACHE
+
+
+def _nice_y_axis(vmin: float, vmax: float, *, include_zero: bool = False,
+                 n_ticks: int = 5) -> tuple[float, float, list[float]]:
+    """Return (nice_min, nice_max, ticks) with round-number tick values.
+
+    ``include_zero`` forces zero to be within the range (use for YoY %
+    charts that cross zero). The step size is chosen from {1, 2, 5} × 10^k
+    so labels fall on intuitive values.
+    """
+    if vmax == vmin:
+        vmax = vmin + 1
+    if include_zero:
+        vmin = min(vmin, 0.0)
+        vmax = max(vmax, 0.0)
+
+    raw_step = (vmax - vmin) / max(n_ticks - 1, 1)
+    if raw_step <= 0:
+        raw_step = 1.0
+    exp = math.floor(math.log10(raw_step))
+    base = 10 ** exp
+    frac = raw_step / base
+    if frac < 1.5:
+        step = 1 * base
+    elif frac < 3:
+        step = 2 * base
+    elif frac < 7:
+        step = 5 * base
+    else:
+        step = 10 * base
+
+    nice_min = math.floor(vmin / step) * step
+    nice_max = math.ceil(vmax / step) * step
+
+    ticks: list[float] = []
+    digits = max(0, -exp + (1 if step / base < 2 else 0))
+    t = nice_min
+    # Use a guarded loop; avoid fp drift by snapping each tick to step precision.
+    for _ in range(64):
+        ticks.append(round(t, digits))
+        if t >= nice_max - step * 1e-6:
+            break
+        t += step
+
+    return float(nice_min), float(nice_max), ticks
+
+
+def _format_tick(v: float, *, is_yoy: bool) -> str:
+    if is_yoy:
+        return f"{v:+.1f}%" if v != 0 else "0%"
+    if abs(v) >= 1000:
+        return f"{v:,.0f}"
+    if abs(v) >= 10:
+        return f"{v:.1f}"
+    return f"{v:.2f}"
 
 
 def _sparkline_data(series_id: str, n: int = 24,
@@ -534,6 +593,7 @@ def _render_page(**ctx) -> str:
     # Build sections — today_html must render first (it populates chart_csv_data)
     analysis_html = ctx.get("analysis_html", "")
     housing_html = ctx.get("housing_html", "")
+    housing_charts_html = _render_housing_charts(ctx.get("db_path", DB_PATH))
     fed_chart_html = ctx.get("fed_chart_html", "")
     today_html = _render_today(ctx)
     upcoming_html = _render_upcoming(ctx)
@@ -564,6 +624,7 @@ def _render_page(**ctx) -> str:
 <body>
 
 <header>
+  <img src="data:image/png;base64,{_favicon_b64()}" alt="Logo" class="header-logo">
   <h1>Simonsen Daily Briefing</h1>
   <div class="date">{today}</div>
 </header>
@@ -588,6 +649,7 @@ def _render_page(**ctx) -> str:
   </section>
 
   <section id="housing" class="tab-content">
+    {housing_charts_html}
     {f'<div class="analysis-block">{housing_html}</div>' if housing_html else '<p class="muted">Housing analysis not yet generated. Run the pipeline to generate.</p>'}
   </section>
 
@@ -934,12 +996,10 @@ def _hero_chart_svg(points: list, title: str, is_yoy: bool = False,
 
     values = [p[1] for p in points]
     vmin, vmax = min(values), max(values)
-    vrange = vmax - vmin if vmax != vmin else 1
-    # 10% padding
-    pad_v = vrange * 0.1
-    vmin_p = vmin - pad_v
-    vmax_p = vmax + pad_v
-    vrange_p = vmax_p - vmin_p
+
+    include_zero = is_yoy and (vmin < 0 < vmax or vmin >= 0 or vmax <= 0)
+    vmin_p, vmax_p, ticks = _nice_y_axis(vmin, vmax, include_zero=include_zero)
+    vrange_p = vmax_p - vmin_p if vmax_p != vmin_p else 1
 
     # Layout
     left_margin = 65
@@ -950,7 +1010,6 @@ def _hero_chart_svg(points: list, title: str, is_yoy: bool = False,
     plot_h = height - top_margin - bottom_margin
 
     color = "#d29922" if is_yoy else "#4A90D9"
-    unit = "%" if is_yoy else ""
 
     def x_pos(i):
         return left_margin + plot_w * i / (len(points) - 1)
@@ -966,31 +1025,22 @@ def _hero_chart_svg(points: list, title: str, is_yoy: bool = False,
         f'background:var(--surface);border-radius:8px">'
     )
 
-    # Gridlines + Y-axis labels
-    n_grid = 5
-    for i in range(n_grid + 1):
-        gv = vmin_p + vrange_p * i / n_grid
+    # Gridlines + Y-axis labels at nice tick values
+    for gv in ticks:
         gy = y_pos(gv)
         parts.append(
             f'<line x1="{left_margin}" y1="{gy:.1f}" '
             f'x2="{width - right_margin}" y2="{gy:.1f}" '
             f'stroke="#30363d" stroke-width="0.5"/>'
         )
-        if is_yoy:
-            label = f"{gv:+.1f}{unit}"
-        elif abs(gv) >= 1000:
-            label = f"{gv:,.0f}"
-        elif abs(gv) >= 10:
-            label = f"{gv:.1f}"
-        else:
-            label = f"{gv:.2f}"
+        label = _format_tick(gv, is_yoy=is_yoy)
         parts.append(
             f'<text x="{left_margin - 8}" y="{gy + 4:.1f}" '
             f'text-anchor="end" fill="#8b949e" font-size="11" '
             f'font-family="-apple-system,sans-serif">{label}</text>'
         )
 
-    # Zero line for YoY charts
+    # Zero line for YoY charts (emphasized vs. regular gridline)
     if is_yoy and vmin_p < 0 < vmax_p:
         zy = y_pos(0)
         parts.append(
@@ -1070,6 +1120,323 @@ def _chart_csv_data(series_id: str, name: str, points: list,
     for d, v in points:
         writer.writerow([d, v])
     return buf.getvalue()
+
+
+# ── Housing comparison charts ──────────────────────────────────────
+
+_HOUSING_CHART_COLORS = [
+    "#58a6ff",  # blue
+    "#3fb950",  # green
+    "#d29922",  # amber
+    "#f85149",  # red
+    "#bc8cff",  # purple
+    "#f0883e",  # orange
+]
+
+# Comparison chart definitions: each is a group of series to overlay
+_HOUSING_COMPARISONS = [
+    {
+        "title": "Pending Sales — YoY % Change",
+        "chart_type": "yoy",
+        "series": [
+            ("ALTOS_NEW_PENDING_13WK", "Altos (13wk avg)"),
+            ("PENLISCOUUS", "Realtor.com"),
+            ("REDFIN_PENDING", "Redfin"),
+            ("EXHOSLUSM495S", "NAR (SA)"),
+        ],
+    },
+    {
+        "title": "Active Inventory — YoY % Change",
+        "chart_type": "yoy",
+        "series": [
+            ("ALTOS_INVENTORY", "Altos"),
+            ("ACTLISCOUUS", "Realtor.com"),
+            ("REDFIN_INVENTORY", "Redfin"),
+            ("HOSINVUSM495N", "NAR"),
+        ],
+    },
+    {
+        "title": "New Listings — YoY % Change",
+        "chart_type": "yoy",
+        "series": [
+            ("ALTOS_NEW_LISTINGS_13WK", "Altos (13wk avg)"),
+            ("NEWLISCOUUS", "Realtor.com"),
+            ("REDFIN_NEW_LISTINGS", "Redfin"),
+        ],
+    },
+    {
+        "title": "Days on Market",
+        "chart_type": "raw",
+        "series": [
+            ("ALTOS_PENDING_DOM", "Altos (pending)"),
+            ("MEDDAYONMARUS", "Realtor.com"),
+            ("REDFIN_MEDIAN_DOM", "Redfin"),
+        ],
+    },
+    {
+        "title": "Homes Sold / Existing Home Sales — YoY % Change",
+        "chart_type": "yoy",
+        "series": [
+            ("REDFIN_SOLD", "Redfin"),
+            ("EXHOSLUSM495S", "NAR (SA)"),
+        ],
+    },
+]
+
+
+def _multi_series_chart_svg(
+    all_points: list,  # [(label, color, [(date, value), ...]), ...]
+    title: str,
+    is_yoy: bool = False,
+    width: int = 800,
+    height: int = 320,
+    chart_id: str = "",
+) -> str:
+    """Render a multi-series overlay chart as SVG with legend + crosshair hover.
+
+    When ``chart_id`` is provided, the SVG includes an invisible overlay
+    rect wired up to a crosshair tooltip that shows all series values for
+    the nearest date. A <script> block embeds the per-chart data used by
+    chartHover() in the page's JS.
+    """
+    all_values = [v for _, _, pts in all_points for _, v in pts]
+    if len(all_values) < 2:
+        return ""
+
+    vmin, vmax = min(all_values), max(all_values)
+    include_zero = is_yoy and (vmin < 0 < vmax or vmin >= 0 or vmax <= 0)
+    vmin_p, vmax_p, ticks = _nice_y_axis(vmin, vmax, include_zero=include_zero)
+    vrange_p = vmax_p - vmin_p if vmax_p != vmin_p else 1
+
+    # Layout — extra space at top for legend
+    left_margin = 65
+    right_margin = 20
+    top_margin = 15
+    legend_height = 30
+    bottom_margin = 35
+    plot_top = top_margin + legend_height
+    plot_h = height - plot_top - bottom_margin
+    plot_w = width - left_margin - right_margin
+
+    # Collect all unique dates for shared x-axis
+    date_set = set()
+    for _, _, pts in all_points:
+        for d, _ in pts:
+            date_set.add(d)
+    all_dates = sorted(date_set)
+    if len(all_dates) < 2:
+        return ""
+    date_idx = {d: i for i, d in enumerate(all_dates)}
+    n_dates = len(all_dates)
+
+    def x_pos_i(i):
+        return left_margin + plot_w * i / (n_dates - 1)
+
+    def x_pos(d):
+        return x_pos_i(date_idx[d])
+
+    def y_pos(v):
+        return plot_top + plot_h * (1 - (v - vmin_p) / vrange_p)
+
+    parts = []
+    parts.append(
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="0 0 {width} {height}" '
+        f'style="width:100%;max-width:{width}px;height:auto;'
+        f'background:var(--surface);border-radius:8px">'
+    )
+
+    # Legend
+    lx = left_margin
+    for label, color, _ in all_points:
+        parts.append(
+            f'<line x1="{lx}" y1="{top_margin + 10}" '
+            f'x2="{lx + 20}" y2="{top_margin + 10}" '
+            f'stroke="{color}" stroke-width="2.5"/>'
+        )
+        parts.append(
+            f'<text x="{lx + 24}" y="{top_margin + 14}" '
+            f'fill="#e6edf3" font-size="11" '
+            f'font-family="-apple-system,sans-serif">{label}</text>'
+        )
+        lx += len(label) * 7 + 40
+
+    # Gridlines + Y-axis labels at nice tick values
+    for gv in ticks:
+        gy = y_pos(gv)
+        parts.append(
+            f'<line x1="{left_margin}" y1="{gy:.1f}" '
+            f'x2="{width - right_margin}" y2="{gy:.1f}" '
+            f'stroke="#30363d" stroke-width="0.5"/>'
+        )
+        parts.append(
+            f'<text x="{left_margin - 8}" y="{gy + 4:.1f}" '
+            f'text-anchor="end" fill="#8b949e" font-size="11" '
+            f'font-family="-apple-system,sans-serif">{_format_tick(gv, is_yoy=is_yoy)}</text>'
+        )
+
+    # Emphasized zero line for YoY charts that cross zero
+    if is_yoy and vmin_p < 0 < vmax_p:
+        zy = y_pos(0)
+        parts.append(
+            f'<line x1="{left_margin}" y1="{zy:.1f}" '
+            f'x2="{width - right_margin}" y2="{zy:.1f}" '
+            f'stroke="#8b949e" stroke-width="1" stroke-dasharray="4,3"/>'
+        )
+
+    # X-axis labels
+    n_labels = min(6, n_dates)
+    step = max(1, (n_dates - 1) // (n_labels - 1)) if n_labels > 1 else 1
+    for i in range(0, n_dates, step):
+        d = all_dates[i]
+        try:
+            dt = datetime.strptime(d, "%Y-%m-%d")
+            label = dt.strftime("%b '%y")
+        except (ValueError, TypeError):
+            label = d[:7]
+        xp = x_pos(d)
+        parts.append(
+            f'<text x="{xp:.1f}" y="{height - 8}" '
+            f'text-anchor="middle" fill="#8b949e" font-size="11" '
+            f'font-family="-apple-system,sans-serif">{label}</text>'
+        )
+
+    # Data lines
+    for label, color, pts in all_points:
+        if len(pts) < 2:
+            continue
+        coords = []
+        for d, v in pts:
+            coords.append(f"{x_pos(d):.1f},{y_pos(v):.1f}")
+        polyline = " ".join(coords)
+        parts.append(
+            f'<polyline points="{polyline}" fill="none" stroke="{color}" '
+            f'stroke-width="2" stroke-linejoin="round" stroke-opacity="0.85"/>'
+        )
+        # Dot on last point
+        last_d, last_v = pts[-1]
+        parts.append(
+            f'<circle cx="{x_pos(last_d):.1f}" cy="{y_pos(last_v):.1f}" '
+            f'r="3.5" fill="{color}"/>'
+        )
+
+    # Crosshair infrastructure (hidden by default; JS toggles visibility)
+    if chart_id:
+        parts.append(
+            f'<line class="xhair xhair-{chart_id}" x1="0" y1="{plot_top}" '
+            f'x2="0" y2="{plot_top + plot_h}" stroke="#8b949e" '
+            f'stroke-width="1" stroke-dasharray="3,3" '
+            f'style="display:none;pointer-events:none"/>'
+        )
+        parts.append(f'<g class="xhair-dots xhair-dots-{chart_id}" style="display:none;pointer-events:none"></g>')
+        parts.append(
+            f'<rect class="chart-overlay" x="{left_margin}" y="{plot_top}" '
+            f'width="{plot_w}" height="{plot_h}" fill="transparent" '
+            f'data-chart-id="{chart_id}" '
+            f'onmousemove="chartHover(event, \'{chart_id}\')" '
+            f'onmouseleave="chartHoverLeave(\'{chart_id}\')"/>'
+        )
+
+    parts.append('</svg>')
+
+    # Embed chart metadata + per-series values for the JS hover handler.
+    if chart_id:
+        # Build per-series value arrays aligned to all_dates (missing = null)
+        series_payload = []
+        for label, color, pts in all_points:
+            value_map = {d: v for d, v in pts}
+            values_aligned = [value_map.get(d) for d in all_dates]
+            series_payload.append({
+                "label": label,
+                "color": color,
+                "values": values_aligned,
+            })
+        payload = {
+            "dates": all_dates,
+            "series": series_payload,
+            "left": left_margin,
+            "top": plot_top,
+            "plotW": plot_w,
+            "plotH": plot_h,
+            "vmin": vmin_p,
+            "vmax": vmax_p,
+            "width": width,
+            "height": height,
+            "isYoy": bool(is_yoy),
+        }
+        parts.append(
+            f'<script>(window._chartData=window._chartData||{{}})'
+            f'["{chart_id}"]={json.dumps(payload)};</script>'
+        )
+
+    return "\n".join(parts)
+
+
+def _housing_chart_data(series_id: str, chart_type: str, since: str,
+                        db_path: Path = DB_PATH) -> list:
+    """Fetch data for housing charts by date range (not point count).
+
+    This avoids the problem where LIMIT N returns 8 months of weekly Altos
+    data but 3 years of monthly Redfin data.
+    """
+    con = sqlite3.connect(db_path)
+    if chart_type == "yoy":
+        rows = con.execute(
+            "SELECT date, value FROM calculated "
+            "WHERE series_id = ? AND calc_type IN ('yoy_pct', 'yoy_pp') "
+            "AND date >= ? ORDER BY date",
+            (series_id, since),
+        ).fetchall()
+    else:
+        rows = con.execute(
+            "SELECT date, value FROM observations "
+            "WHERE series_id = ? AND date >= ? ORDER BY date",
+            (series_id, since),
+        ).fetchall()
+    con.close()
+    return rows
+
+
+def _render_housing_charts(db_path: Path = DB_PATH) -> str:
+    """Build HTML for housing comparison overlay charts."""
+    since = (date.today() - timedelta(days=3 * 365)).isoformat()
+    chart_parts = []
+
+    for idx, comp in enumerate(_HOUSING_COMPARISONS):
+        series_data = []
+        for i, (sid, label) in enumerate(comp["series"]):
+            pts = _housing_chart_data(sid, comp["chart_type"], since, db_path)
+            if pts:
+                color = _HOUSING_CHART_COLORS[i % len(_HOUSING_CHART_COLORS)]
+                series_data.append((label, color, pts))
+
+        if not series_data:
+            continue
+
+        is_yoy = comp["chart_type"] == "yoy"
+        chart_id = f"cmp-chart-{idx}"
+        svg = _multi_series_chart_svg(
+            series_data, comp["title"], is_yoy, chart_id=chart_id,
+        )
+        if not svg:
+            continue
+
+        chart_parts.append(f"""
+        <div class="hero-chart chart-wrap">
+          <div class="chart-title">{comp['title']}</div>
+          {svg}
+          <div class="chart-tooltip" id="tip-{chart_id}"></div>
+        </div>""")
+
+    if not chart_parts:
+        return ""
+
+    return (
+        '<h2 style="margin-top:0">Housing Data — Cross-Source Comparison</h2>\n'
+        '<p class="muted">Same metrics from different sources overlaid to spot '
+        'convergence and divergence. YoY % normalizes different scales.</p>\n'
+        + "\n".join(chart_parts)
+    )
 
 
 def _render_hero_charts(ctx) -> str:
@@ -1395,9 +1762,10 @@ header {
   padding: 24px 32px 16px;
   border-bottom: 1px solid var(--border);
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 16px;
 }
+header .header-logo { height: 32px; width: auto; }
 header h1 { font-size: 20px; font-weight: 600; }
 header .date { color: var(--text-muted); font-size: 14px; }
 
@@ -1632,6 +2000,32 @@ main { padding: 24px 32px; max-width: 1400px; }
   padding: 20px 24px;
   margin-bottom: 24px;
 }
+.chart-wrap { position: relative; }
+.chart-overlay { cursor: crosshair; }
+.chart-tooltip {
+  position: absolute;
+  display: none;
+  background: rgba(22, 27, 34, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  z-index: 10;
+  white-space: nowrap;
+}
+.chart-tooltip .tip-date {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+.chart-tooltip .tip-row { display: flex; align-items: center; gap: 6px; color: var(--text-muted); }
+.chart-tooltip .tip-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.chart-tooltip .tip-val { color: var(--text); font-family: monospace; margin-left: auto; }
 .chart-title {
   font-size: 14px;
   font-weight: 600;
@@ -2073,4 +2467,92 @@ function renderFlagged() {
 
 // Render on page load
 document.addEventListener('DOMContentLoaded', renderFlagged);
+
+// ── Multi-series chart crosshair hover ────────────────────────────────
+function chartHover(evt, id) {
+  var cd = (window._chartData || {})[id];
+  if (!cd) return;
+  var overlay = evt.currentTarget;
+  var svg = overlay.ownerSVGElement;
+  var orect = overlay.getBoundingClientRect();
+  var frac = (evt.clientX - orect.left) / orect.width;
+  var n = cd.dates.length;
+  var idx = Math.max(0, Math.min(n - 1, Math.round(frac * (n - 1))));
+  var xSvg = cd.left + cd.plotW * idx / (n - 1);
+
+  // Move crosshair line
+  var xhair = svg.querySelector('.xhair-' + id);
+  if (xhair) {
+    xhair.setAttribute('x1', xSvg);
+    xhair.setAttribute('x2', xSvg);
+    xhair.style.display = 'block';
+  }
+
+  // Render per-series dots + tooltip rows
+  var dotsG = svg.querySelector('.xhair-dots-' + id);
+  var dotsHtml = '';
+  var rowsHtml = '';
+  var vrange = (cd.vmax - cd.vmin) || 1;
+  cd.series.forEach(function(s) {
+    var v = s.values[idx];
+    if (v === null || v === undefined) return;
+    var y = cd.top + cd.plotH * (1 - (v - cd.vmin) / vrange);
+    dotsHtml += '<circle cx="' + xSvg + '" cy="' + y + '" r="4" fill="' + s.color +
+                '" stroke="#0d1117" stroke-width="1.5"/>';
+    var vLabel;
+    if (cd.isYoy) {
+      vLabel = (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+    } else if (Math.abs(v) >= 1000) {
+      vLabel = v.toLocaleString(undefined, {maximumFractionDigits: 0});
+    } else if (Math.abs(v) >= 10) {
+      vLabel = v.toFixed(1);
+    } else {
+      vLabel = v.toFixed(2);
+    }
+    rowsHtml += '<div class="tip-row">' +
+                '<span class="tip-dot" style="background:' + s.color + '"></span>' +
+                '<span>' + s.label + '</span>' +
+                '<span class="tip-val">' + vLabel + '</span></div>';
+  });
+  if (dotsG) {
+    dotsG.innerHTML = dotsHtml;
+    dotsG.style.display = 'block';
+  }
+
+  // Position tooltip inside the wrapping .chart-wrap
+  var tip = document.getElementById('tip-' + id);
+  if (tip) {
+    var dateStr = cd.dates[idx];
+    try {
+      var dt = new Date(dateStr);
+      if (!isNaN(dt)) {
+        dateStr = dt.toLocaleDateString(undefined, {year:'numeric', month:'short', day:'numeric'});
+      }
+    } catch(e) {}
+    tip.innerHTML = '<div class="tip-date">' + dateStr + '</div>' + rowsHtml;
+    tip.style.display = 'block';
+    // Convert SVG x into wrapper-relative pixel x
+    var wrap = tip.parentElement;
+    var wrapRect = wrap.getBoundingClientRect();
+    var svgRect = svg.getBoundingClientRect();
+    var px = svgRect.left + (xSvg / cd.width) * svgRect.width - wrapRect.left;
+    var tipW = tip.offsetWidth;
+    // Flip side if tooltip would overflow wrapper
+    if (px + tipW + 16 > wrapRect.width) {
+      tip.style.left = (px - tipW - 12) + 'px';
+    } else {
+      tip.style.left = (px + 12) + 'px';
+    }
+    tip.style.top = (svgRect.top - wrapRect.top + 10) + 'px';
+  }
+}
+
+function chartHoverLeave(id) {
+  var tip = document.getElementById('tip-' + id);
+  if (tip) tip.style.display = 'none';
+  var xhair = document.querySelector('.xhair-' + id);
+  if (xhair) xhair.style.display = 'none';
+  var dotsG = document.querySelector('.xhair-dots-' + id);
+  if (dotsG) dotsG.style.display = 'none';
+}
 """
