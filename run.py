@@ -10,6 +10,9 @@ from econ_data.fetch import fetch_all
 from econ_data.fetch_bls import fetch_bls, build_series_map
 from econ_data.fetch_confboard import fetch_confboard
 from econ_data.fetch_mnd import fetch_mnd
+from econ_data.fetch_nar import fetch_nar
+from econ_data.fetch_realtor import fetch_realtor
+from econ_data.fetch_redfin import fetch_redfin
 from econ_data.fetch_web import fetch_web
 from econ_data.fetch_altos import fetch_altos
 from econ_data.fetch_xactus import fetch_xactus
@@ -58,9 +61,25 @@ if __name__ == "__main__":
     last_dates = get_last_dates()
     last_checked = get_fetch_log()
 
+    # Fetch NAR Existing Home Sales first (primary source, faster than FRED)
+    nar_result = fetch_nar(last_dates=last_dates)
+    if nar_result["new"]:
+        save(nar_result["new"])
+        last_dates = get_last_dates()  # refresh so FRED skips these series
+        log(f"NAR scraper: {len(nar_result['new'])} observations")
+
     # Fetch FRED series (smart scheduling: only hits API when due)
+    # NAR series already captured above will be skipped via cooldown
     fred = fred_series(cfg)
     result = fetch_all(fred, last_dates=last_dates, last_checked=last_checked)
+
+    # Merge NAR counts into result (NAR-sourced series show in summary)
+    for sid, n in nar_result["counts"].items():
+        if n > 0:
+            result["counts"][sid] = n
+            result["new"].extend(
+                o for o in nar_result["new"] if o.series_id == sid
+            )
 
     # Record which series were checked
     if result.get("checked"):
@@ -122,6 +141,20 @@ if __name__ == "__main__":
     result["counts"].update(cb_result["counts"])
     if cb_result["new"]:
         save(cb_result["new"])
+
+    # Fetch Realtor.com bonus metrics (S3 CSV)
+    realtor_result = fetch_realtor(last_dates=last_dates)
+    result["new"].extend(realtor_result["new"])
+    result["counts"].update(realtor_result["counts"])
+    if realtor_result["new"]:
+        save(realtor_result["new"])
+
+    # Fetch Redfin housing market data (S3 TSV)
+    redfin_result = fetch_redfin(last_dates=last_dates)
+    result["new"].extend(redfin_result["new"])
+    result["counts"].update(redfin_result["counts"])
+    if redfin_result["new"]:
+        save(redfin_result["new"])
 
     # Compute mortgage rate spread (derived from MND + DGS10)
     spread_result = compute_spread(last_dates=get_last_dates())

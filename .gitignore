@@ -13,3 +13,5 @@ mnd_history.tsv
 series_inventory.csv
 .DS_Store
 .claude/
+.gstack/
+import_files/

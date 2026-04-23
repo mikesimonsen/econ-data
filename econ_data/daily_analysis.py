@@ -1,7 +1,8 @@
-"""Generate LLM-written daily analysis from summary and signals data."""
+"""Generate LLM-written daily analysis from signals data."""
 
 import os
 import time
+from datetime import date
 from pathlib import Path
 
 import anthropic
@@ -20,21 +21,31 @@ def _load_prompt() -> str:
     return PROMPT_PATH.read_text()
 
 
-def generate_daily_analysis(signals_text: str, summary_text: str) -> str:
-    """Call Claude to generate a written daily analysis from signals and summary data."""
+def generate_daily_analysis(signals_text: str, summary_text: str = None) -> str:
+    """Call Claude to generate a written daily analysis from signals data.
+
+    The signals report already contains all values, arrows, YoY, and flags
+    with explicit UPDATED TODAY / UPDATED THIS WEEK grouping.  The full
+    summary is intentionally excluded — it adds 500+ lines with no temporal
+    context, which causes the LLM to lose track of what is new today.
+    """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY not set in .env")
     client = anthropic.Anthropic(api_key=api_key, timeout=TIMEOUT_SECS)
 
-    user_content = f"SIGNALS:\n{signals_text}\n\nFULL SUMMARY:\n{summary_text}"
+    today = date.today()
+    day_of_week = today.strftime("%A")
+    date_header = f"TODAY IS: {today.isoformat()} ({day_of_week})\n\n"
+
+    user_content = date_header + signals_text
     system = _load_prompt()
 
     last_err = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             message = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=1024,
                 system=system,
                 messages=[{"role": "user", "content": user_content}],

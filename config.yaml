@@ -400,6 +400,84 @@ groups:
         name: "Months Supply of Inventory"
         inverted: true
 
+  realtor-dot-com:
+    name: "Realtor.com Housing Data"
+    series:
+      - id: ACTLISCOUUS
+        name: "Active Listing Count (Realtor.com)"
+      - id: NEWLISCOUUS
+        name: "New Listing Count (Realtor.com)"
+      - id: PENLISCOUUS
+        name: "Pending Listing Count (Realtor.com)"
+      - id: PRIREDCOUUS
+        name: "Price Reduced Count (Realtor.com)"
+      - id: MEDLISPRIUS
+        name: "Median Listing Price (Realtor.com)"
+        units: dollars
+      - id: AVELISPRIUS
+        name: "Average Listing Price (Realtor.com)"
+        units: dollars
+      - id: MEDLISPRIPERSQUFEEUS
+        name: "Median Listing Price per Sq Ft (Realtor.com)"
+        units: dollars
+      - id: MEDDAYONMARUS
+        name: "Median Days on Market (Realtor.com)"
+        inverted: true
+      - id: MEDSQUFEEUS
+        name: "Median Home Size Sq Ft (Realtor.com)"
+
+  realtor-dot-com-extra:
+    name: "Realtor.com Bonus Metrics (S3 CSV)"
+    source: realtor
+    series:
+      - id: REALTOR_PENDING_RATIO
+        name: "Pending Ratio (Realtor.com)"
+      - id: REALTOR_PRICE_REDUCED_SHARE
+        name: "Price Reduced Share (Realtor.com)"
+        units: percent
+      - id: REALTOR_TOTAL_LISTINGS
+        name: "Total Listing Count (Realtor.com)"
+
+  redfin:
+    name: "Redfin Housing Market Data"
+    source: redfin
+    series:
+      # Not Seasonally Adjusted
+      - id: REDFIN_PENDING
+        name: "Pending Sales (Redfin)"
+      - id: REDFIN_SOLD
+        name: "Homes Sold (Redfin)"
+      - id: REDFIN_NEW_LISTINGS
+        name: "New Listings (Redfin)"
+      - id: REDFIN_INVENTORY
+        name: "Active Inventory (Redfin)"
+      - id: REDFIN_MONTHS_SUPPLY
+        name: "Months of Supply (Redfin)"
+        inverted: true
+      - id: REDFIN_MEDIAN_DOM
+        name: "Median Days on Market (Redfin)"
+        inverted: true
+      - id: REDFIN_SALE_TO_LIST
+        name: "Sale-to-List Ratio (Redfin)"
+      - id: REDFIN_PRICE_DROPS
+        name: "Price Drop Share (Redfin)"
+        units: percent
+      - id: REDFIN_MEDIAN_PRICE
+        name: "Median Sale Price (Redfin)"
+        units: dollars
+      - id: REDFIN_OFF_MARKET_2WK
+        name: "Off Market in Two Weeks (Redfin)"
+        units: percent
+      # Seasonally Adjusted
+      - id: REDFIN_PENDING_SA
+        name: "Pending Sales SA (Redfin)"
+      - id: REDFIN_SOLD_SA
+        name: "Homes Sold SA (Redfin)"
+      - id: REDFIN_NEW_LISTINGS_SA
+        name: "New Listings SA (Redfin)"
+      - id: REDFIN_INVENTORY_SA
+        name: "Active Inventory SA (Redfin)"
+
   housing-starts:
     name: "Housing Starts (Census, SAAR)"
     series:
@@ -651,6 +729,9 @@ groups:
         name: "Altos New Pending Sales 4-Week Avg (SFR + Condo)"
       - id: ALTOS_NEW_PENDING_13WK
         name: "Altos New Pending Sales 13-Week Avg (SFR + Condo)"
+      - id: ALTOS_PENDING_DOM
+        name: "Altos Pending Days on Market (SFR + Condo)"
+        inverted: true
 
   construction-employment:
     name: "Construction Employment (BLS)"

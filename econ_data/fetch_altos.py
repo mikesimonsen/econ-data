@@ -72,6 +72,14 @@ ALTOS_SERIES = {
         "window_size": 6,
         "rolling": 4,
     },
+    "ALTOS_PENDING_DOM": {
+        "name": "Altos Pending Days on Market (SFR + Condo)",
+        "column": "pending_dom_mean",
+        "weight_column": "pending_count",
+        "res_types": [100, 200],
+        "quartile": "__ALL",
+        "window_size": 6,
+    },
 }
 
 
@@ -129,8 +137,11 @@ def _build_series(
     spec: dict,
     last_date: date | None,
 ) -> list[Observation]:
-    """Filter rows by spec, aggregate (sum) across res_types per date."""
-    date_totals = _aggregate(rows, spec)
+    """Filter rows by spec, aggregate across res_types per date."""
+    if "weight_column" in spec:
+        date_totals = _weighted_avg(rows, spec)
+    else:
+        date_totals = _aggregate(rows, spec)
 
     observations = []
     for obs_date in sorted(date_totals):
@@ -199,3 +210,33 @@ def _aggregate(rows: list[dict], spec: dict) -> dict[date, float]:
             date_totals[obs_date] += float(val)
 
     return date_totals
+
+
+def _weighted_avg(rows: list[dict], spec: dict) -> dict[date, float]:
+    """Filter CSV rows by spec and compute weighted average across res_types per date."""
+    col = spec["column"]
+    weight_col = spec["weight_column"]
+    res_types = {str(rt) for rt in spec["res_types"]}
+    quartile = spec["quartile"]
+    window_size = str(spec["window_size"])
+
+    # Accumulate (sum of value*weight, sum of weight) per date
+    date_num: dict[date, float] = defaultdict(float)
+    date_den: dict[date, float] = defaultdict(float)
+    for row in rows:
+        if (
+            row["res_type_master_id"] in res_types
+            and row["quartile"] == quartile
+            and row["window_size"] == window_size
+        ):
+            val = row.get(col)
+            wt = row.get(weight_col)
+            if not val or not wt or val == "" or wt == "":
+                continue
+            obs_date = date.fromisoformat(row["date"])
+            v, w = float(val), float(wt)
+            date_num[obs_date] += v * w
+            date_den[obs_date] += w
+
+    return {d: round(date_num[d] / date_den[d], 2)
+            for d in date_num if date_den[d] > 0}
