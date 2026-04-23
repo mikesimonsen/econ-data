@@ -594,6 +594,7 @@ def _render_page(**ctx) -> str:
     analysis_html = ctx.get("analysis_html", "")
     housing_html = ctx.get("housing_html", "")
     housing_charts_html = _render_housing_charts(ctx.get("db_path", DB_PATH))
+    employment_charts_html = _render_employment_charts(ctx.get("db_path", DB_PATH))
     fed_chart_html = ctx.get("fed_chart_html", "")
     today_html = _render_today(ctx)
     upcoming_html = _render_upcoming(ctx)
@@ -632,6 +633,7 @@ def _render_page(**ctx) -> str:
 <nav>
   <a href="#today" class="active" onclick="showTab('today', this)">Today</a>
   <a href="#housing" onclick="showTab('housing', this)">Housing</a>
+  <a href="#employment" onclick="showTab('employment', this)">Employment</a>
   <a href="#fed" onclick="showTab('fed', this)">Fed</a>
   <a href="#upcoming" onclick="showTab('upcoming', this)">Upcoming</a>
   <a href="#recent" onclick="showTab('recent', this)">Recent Data Releases{_badge(recent_count)}</a>
@@ -651,6 +653,10 @@ def _render_page(**ctx) -> str:
   <section id="housing" class="tab-content">
     {housing_charts_html}
     {f'<div class="analysis-block">{housing_html}</div>' if housing_html else '<p class="muted">Housing analysis not yet generated. Run the pipeline to generate.</p>'}
+  </section>
+
+  <section id="employment" class="tab-content">
+    {employment_charts_html if employment_charts_html else '<p class="muted">Employment charts unavailable — underlying series not yet populated.</p>'}
   </section>
 
   <section id="fed" class="tab-content">
@@ -1435,6 +1441,132 @@ def _render_housing_charts(db_path: Path = DB_PATH) -> str:
         '<h2 style="margin-top:0">Housing Data — Cross-Source Comparison</h2>\n'
         '<p class="muted">Same metrics from different sources overlaid to spot '
         'convergence and divergence. YoY % normalizes different scales.</p>\n'
+        + "\n".join(chart_parts)
+    )
+
+
+# ── Employment comparison charts ───────────────────────────────────
+
+_EMPLOYMENT_COMPARISONS = [
+    {
+        "title": "Unemployment Rates — U-1 through U-6",
+        "chart_type": "raw",
+        "series": [
+            ("U1RATE", "U-1 (15+ wks)"),
+            ("U2RATE", "U-2 (job losers)"),
+            ("UNRATE", "U-3 (headline)"),
+            ("U4RATE", "U-4 (+ discouraged)"),
+            ("U5RATE", "U-5 (+ marginally attached)"),
+            ("U6RATE", "U-6 (+ part-time econ)"),
+        ],
+    },
+    {
+        "title": "Initial Jobless Claims",
+        "chart_type": "raw",
+        "series": [
+            ("ICSA", "Initial Claims (weekly)"),
+            ("IC4WSA", "Initial Claims (4-wk avg)"),
+        ],
+    },
+    {
+        "title": "Continuing Claims",
+        "chart_type": "raw",
+        "series": [
+            ("CCSA", "Continuing Claims (weekly)"),
+            ("CC4WSA", "Continuing Claims (4-wk avg)"),
+        ],
+    },
+    {
+        "title": "JOLTS Rates — Openings, Hires, Quits, Layoffs, Separations",
+        "chart_type": "raw",
+        "series": [
+            ("JTSJOR", "Openings rate"),
+            ("JTSHIR", "Hires rate"),
+            ("JTSQUR", "Quits rate"),
+            ("JTSLDR", "Layoffs rate"),
+            ("JTSTSR", "Total separations rate"),
+        ],
+    },
+    {
+        "title": "Employment Growth — YoY % Change",
+        "chart_type": "yoy",
+        "series": [
+            ("PAYEMS", "Nonfarm Payrolls"),
+            ("CE16OV", "CPS Employment"),
+        ],
+    },
+    {
+        "title": "Wage Growth — YoY %",
+        "chart_type": "mixed",
+        "series": [
+            ("FRBATLWGT3MMAUMHWGO", "Atlanta Fed 3M MA", "raw"),
+            ("FRBATLWGT12MMUMHGO", "Atlanta Fed 12M MA", "raw"),
+            ("CES0500000003", "Avg Hourly Earnings (YoY)", "yoy"),
+        ],
+    },
+    {
+        "title": "Labor Force Participation & Employment-Population Ratio",
+        "chart_type": "raw",
+        "series": [
+            ("CIVPART", "Labor Force Participation Rate"),
+            ("EMRATIO", "Employment-Population Ratio"),
+        ],
+    },
+    {
+        "title": "Duration of Unemployment (Weeks)",
+        "chart_type": "raw",
+        "series": [
+            ("UEMPMED", "Median Duration"),
+            ("UEMPMEAN", "Average Duration"),
+        ],
+    },
+]
+
+
+def _render_employment_charts(db_path: Path = DB_PATH) -> str:
+    """Build HTML for employment comparison overlay charts."""
+    since = (date.today() - timedelta(days=3 * 365)).isoformat()
+    chart_parts = []
+
+    for idx, comp in enumerate(_EMPLOYMENT_COMPARISONS):
+        series_data = []
+        chart_type = comp["chart_type"]
+        for i, entry in enumerate(comp["series"]):
+            if chart_type == "mixed":
+                sid, label, per_series_type = entry
+            else:
+                sid, label = entry
+                per_series_type = chart_type
+            pts = _housing_chart_data(sid, per_series_type, since, db_path)
+            if pts:
+                color = _HOUSING_CHART_COLORS[i % len(_HOUSING_CHART_COLORS)]
+                series_data.append((label, color, pts))
+
+        if not series_data:
+            continue
+
+        is_yoy = chart_type == "yoy" or chart_type == "mixed"
+        chart_id = f"emp-chart-{idx}"
+        svg = _multi_series_chart_svg(
+            series_data, comp["title"], is_yoy, chart_id=chart_id,
+        )
+        if not svg:
+            continue
+
+        chart_parts.append(f"""
+        <div class="hero-chart chart-wrap">
+          <div class="chart-title">{comp['title']}</div>
+          {svg}
+          <div class="chart-tooltip" id="tip-{chart_id}"></div>
+        </div>""")
+
+    if not chart_parts:
+        return ""
+
+    return (
+        '<h2 style="margin-top:0">Employment Data — Overlay Comparisons</h2>\n'
+        '<p class="muted">Related employment series plotted together to spot '
+        'convergence, divergence, and turning points.</p>\n'
         + "\n".join(chart_parts)
     )
 

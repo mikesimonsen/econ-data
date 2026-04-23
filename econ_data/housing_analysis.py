@@ -158,7 +158,7 @@ def generate_housing_analysis(cfg: dict, db_path=None) -> str:
     for attempt in range(1, 3):
         try:
             message = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=1500,
                 system=system,
                 messages=[{"role": "user", "content": f"DATA SNAPSHOT:\n{snapshot}"}],

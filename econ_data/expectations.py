@@ -296,7 +296,7 @@ def refresh_release_calendar(db_path: Path = DB_PATH) -> int:
 
         try:
             msg = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=400,
                 tools=[{
                     "type": "web_search_20250305",
@@ -532,7 +532,7 @@ def _search_consensus(spec: dict, period: str) -> dict | None:
 
     try:
         msg = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=300,
             tools=[{
                 "type": "web_search_20250305",
