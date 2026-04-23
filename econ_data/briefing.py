@@ -593,8 +593,8 @@ def _render_page(**ctx) -> str:
     # Build sections — today_html must render first (it populates chart_csv_data)
     analysis_html = ctx.get("analysis_html", "")
     housing_html = ctx.get("housing_html", "")
-    housing_charts_html = _render_housing_charts(ctx.get("db_path", DB_PATH))
-    employment_charts_html = _render_employment_charts(ctx.get("db_path", DB_PATH))
+    housing_charts_html = _render_housing_charts(ctx)
+    employment_charts_html = _render_employment_charts(ctx)
     fed_chart_html = ctx.get("fed_chart_html", "")
     today_html = _render_today(ctx)
     upcoming_html = _render_upcoming(ctx)
@@ -1128,6 +1128,37 @@ def _chart_csv_data(series_id: str, name: str, points: list,
     return buf.getvalue()
 
 
+def _slug(text: str) -> str:
+    """Filesystem-safe slug for chart filenames."""
+    out = []
+    for ch in text.lower():
+        if ch.isalnum():
+            out.append(ch)
+        elif out and out[-1] != "-":
+            out.append("-")
+    return "".join(out).strip("-")
+
+
+def _multi_series_csv(series: list) -> str:
+    """Build CSV for an overlay chart: date + one column per series, aligned.
+
+    ``series`` is a list of (label, [(date, value), ...]) tuples.
+    """
+    all_dates = sorted({d for _, pts in series for d, _ in pts})
+    value_maps = [(label, dict(pts)) for label, pts in series]
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["date"] + [label for label, _ in value_maps])
+    for d in all_dates:
+        row = [d]
+        for _, vmap in value_maps:
+            v = vmap.get(d)
+            row.append("" if v is None else v)
+        writer.writerow(row)
+    return buf.getvalue()
+
+
 # ── Housing comparison charts ──────────────────────────────────────
 
 _HOUSING_CHART_COLORS = [
@@ -1403,8 +1434,10 @@ def _housing_chart_data(series_id: str, chart_type: str, since: str,
     return rows
 
 
-def _render_housing_charts(db_path: Path = DB_PATH) -> str:
+def _render_housing_charts(ctx: dict) -> str:
     """Build HTML for housing comparison overlay charts."""
+    db_path = ctx.get("db_path", DB_PATH)
+    chart_csvs = ctx.setdefault("chart_csv_data", {})
     since = (date.today() - timedelta(days=3 * 365)).isoformat()
     chart_parts = []
 
@@ -1427,11 +1460,19 @@ def _render_housing_charts(db_path: Path = DB_PATH) -> str:
         if not svg:
             continue
 
+        chart_csvs[chart_id] = _multi_series_csv(
+            [(label, pts) for label, _, pts in series_data]
+        )
+        fname_base = f"housing_{_slug(comp['title'])}"
+
         chart_parts.append(f"""
-        <div class="hero-chart chart-wrap">
+        <div class="hero-chart chart-wrap" id="{chart_id}-container">
           <div class="chart-title">{comp['title']}</div>
           {svg}
           <div class="chart-tooltip" id="tip-{chart_id}"></div>
+          <div class="chart-actions">
+            <button class="btn-export" onclick="downloadChartCsv('{chart_id}', '{fname_base}')">CSV</button>
+          </div>
         </div>""")
 
     if not chart_parts:
@@ -1523,8 +1564,10 @@ _EMPLOYMENT_COMPARISONS = [
 ]
 
 
-def _render_employment_charts(db_path: Path = DB_PATH) -> str:
+def _render_employment_charts(ctx: dict) -> str:
     """Build HTML for employment comparison overlay charts."""
+    db_path = ctx.get("db_path", DB_PATH)
+    chart_csvs = ctx.setdefault("chart_csv_data", {})
     since = (date.today() - timedelta(days=3 * 365)).isoformat()
     chart_parts = []
 
@@ -1553,11 +1596,19 @@ def _render_employment_charts(db_path: Path = DB_PATH) -> str:
         if not svg:
             continue
 
+        chart_csvs[chart_id] = _multi_series_csv(
+            [(label, pts) for label, _, pts in series_data]
+        )
+        fname_base = f"employment_{_slug(comp['title'])}"
+
         chart_parts.append(f"""
-        <div class="hero-chart chart-wrap">
+        <div class="hero-chart chart-wrap" id="{chart_id}-container">
           <div class="chart-title">{comp['title']}</div>
           {svg}
           <div class="chart-tooltip" id="tip-{chart_id}"></div>
+          <div class="chart-actions">
+            <button class="btn-export" onclick="downloadChartCsv('{chart_id}', '{fname_base}')">CSV</button>
+          </div>
         </div>""")
 
     if not chart_parts:
@@ -1582,7 +1633,7 @@ def _render_hero_charts(ctx) -> str:
     if not heroes:
         return ""
 
-    chart_csvs = {}
+    chart_csvs = ctx.setdefault("chart_csv_data", {})
     parts = []
     for i, (gid, gname, a, chart_type, n_points) in enumerate(heroes):
         sid = a["series_id"]
@@ -1624,8 +1675,6 @@ def _render_hero_charts(ctx) -> str:
           </div>
         </div>""")
 
-    # Store chart CSVs in context for JS embedding
-    ctx["chart_csv_data"] = chart_csvs
     return "\n".join(parts)
 
 
