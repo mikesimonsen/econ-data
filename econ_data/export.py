@@ -1,12 +1,12 @@
 import csv
-import sqlite3
 from pathlib import Path
 
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from econ_data.store_sqlite import DB_PATH, get_export_log, get_last_dates
+from econ_data.db import connect
+from econ_data.store_sqlite import DB_PATH, get_export_log, get_last_dates  # signature compat / SQLite-backed log helpers
 
 # Maps user-facing data type names to DB/export details
 DATA_TYPES = {
@@ -21,10 +21,10 @@ DATA_TYPES = {
 
 def _query_raw(series_ids: list, db_path: Path = DB_PATH) -> dict:
     """Return {series_id: {"name": str, "rows": [(date, value), ...]}}."""
-    con = sqlite3.connect(db_path)
-    placeholders = ",".join("?" * len(series_ids))
+    con = connect()
+    placeholders = ",".join(["%s"] * len(series_ids))
     cur = con.execute(
-        f"SELECT series_id, name, date, value FROM observations "
+        f"SELECT series_id, name, date::text, value FROM observations "
         f"WHERE series_id IN ({placeholders}) ORDER BY series_id, date",
         series_ids,
     )
@@ -33,25 +33,26 @@ def _query_raw(series_ids: list, db_path: Path = DB_PATH) -> dict:
         if series_id not in result:
             result[series_id] = {"name": name, "rows": []}
         result[series_id]["rows"].append((date, value))
-    con.close()
     return result
 
 
 def _query_calc(series_ids: list, calc_type: str, db_path: Path = DB_PATH) -> dict:
     """Return {series_id: {"name": str, "rows": [(date, value), ...]}} for a calc type."""
-    con = sqlite3.connect(db_path)
-    placeholders = ",".join("?" * len(series_ids))
-    # Get names from observations table
+    con = connect()
+    placeholders = ",".join(["%s"] * len(series_ids))
+    # Get the canonical (oldest-row) name per series. Some series have multiple
+    # names in observations (FRED renamed them); pick deterministically.
     names = {}
     for sid, name in con.execute(
-        f"SELECT DISTINCT series_id, name FROM observations WHERE series_id IN ({placeholders})",
+        f"SELECT DISTINCT ON (series_id) series_id, name FROM observations "
+        f"WHERE series_id IN ({placeholders}) ORDER BY series_id, date",
         series_ids,
     ).fetchall():
         names[sid] = name
 
     cur = con.execute(
-        f"SELECT series_id, date, value FROM calculated "
-        f"WHERE series_id IN ({placeholders}) AND calc_type = ? ORDER BY series_id, date",
+        f"SELECT series_id, date::text, value FROM calculated "
+        f"WHERE series_id IN ({placeholders}) AND calc_type = %s ORDER BY series_id, date",
         series_ids + [calc_type],
     )
     result = {}
@@ -59,7 +60,6 @@ def _query_calc(series_ids: list, calc_type: str, db_path: Path = DB_PATH) -> di
         if series_id not in result:
             result[series_id] = {"name": names.get(series_id, series_id), "rows": []}
         result[series_id]["rows"].append((date, value))
-    con.close()
     return result
 
 
@@ -98,43 +98,41 @@ def _query_all(series_ids: list, db_path: Path = DB_PATH) -> dict:
 
 
 def available_series(db_path: Path = DB_PATH) -> list:
-    """Return list of (series_id, name) stored in the database."""
-    con = sqlite3.connect(db_path)
-    rows = con.execute(
-        "SELECT DISTINCT series_id, name FROM observations ORDER BY series_id"
+    """Return list of (series_id, name) stored in the database. Deduplicated by series_id."""
+    return connect().execute(
+        "SELECT DISTINCT ON (series_id) series_id, name FROM observations "
+        "ORDER BY series_id, date"
     ).fetchall()
-    con.close()
-    return rows
 
 
 def available_groups(db_path: Path = DB_PATH) -> dict:
     """Return {group_id: {"name": str, "series": [(series_id, name), ...]}}."""
-    con = sqlite3.connect(db_path)
+    con = connect()
     groups = {}
-    for group_id, name in con.execute("SELECT group_id, name FROM groups ORDER BY group_id"):
+    for group_id, name in con.execute("SELECT group_id, name FROM groups ORDER BY group_id").fetchall():
         groups[group_id] = {"name": name, "series": []}
     for group_id, series_id in con.execute(
         "SELECT gm.group_id, o.series_id "
         "FROM group_members gm "
         "JOIN (SELECT DISTINCT series_id FROM observations) o ON gm.series_id = o.series_id "
         "ORDER BY gm.group_id, gm.series_id"
-    ):
+    ).fetchall():
         if group_id in groups:
             series_name = con.execute(
-                "SELECT DISTINCT name FROM observations WHERE series_id = ?", (series_id,)
+                "SELECT name FROM observations WHERE series_id = %s "
+                "ORDER BY date LIMIT 1",
+                (series_id,)
             ).fetchone()[0]
             groups[group_id]["series"].append((series_id, series_name))
-    con.close()
     return groups
 
 
 def series_for_group(group_id: str, db_path: Path = DB_PATH) -> list:
     """Return [series_id, ...] belonging to a group."""
-    con = sqlite3.connect(db_path)
-    rows = con.execute(
-        "SELECT series_id FROM group_members WHERE group_id = ?", (group_id,)
+    rows = connect().execute(
+        "SELECT series_id FROM group_members WHERE group_id = %s ORDER BY series_id",
+        (group_id,)
     ).fetchall()
-    con.close()
     return [r[0] for r in rows]
 
 

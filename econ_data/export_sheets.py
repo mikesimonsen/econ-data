@@ -8,12 +8,12 @@ Writes a manifest (last_updated.json) so consumers can skip unchanged groups.
 
 import csv
 import json
-import sqlite3
 from datetime import datetime
 from pathlib import Path
 
 from econ_data.config import load as load_config, percent_series
-from econ_data.store_sqlite import DB_PATH
+from econ_data.db import connect
+from econ_data.store_sqlite import DB_PATH  # signature compat for unmigrated callers
 
 SHEETS_DIR = Path(__file__).parent.parent / "sheets_data"
 SHEETS_CALC_DIR = Path(__file__).parent.parent / "sheets_data_calcs"
@@ -29,13 +29,15 @@ def _export_group(group_id: str, series_ids: list, output_dir: Path,
     calc_type: calc type string, or None for observations.
     suffix: appended to column names (e.g. " Period Chg").
     """
-    con = sqlite3.connect(db_path)
+    con = connect()
 
     # Get series names
     names = {}
     for sid in series_ids:
         row = con.execute(
-            "SELECT DISTINCT name FROM observations WHERE series_id = ?", (sid,)
+            "SELECT name FROM observations WHERE series_id = %s "
+            "ORDER BY date LIMIT 1",
+            (sid,)
         ).fetchone()
         names[sid] = row[0] if row else sid
 
@@ -45,19 +47,17 @@ def _export_group(group_id: str, series_ids: list, output_dir: Path,
     for sid in series_ids:
         if table == "observations":
             rows = con.execute(
-                "SELECT date, value FROM observations WHERE series_id = ? ORDER BY date",
+                "SELECT date::text, value FROM observations WHERE series_id = %s ORDER BY date",
                 (sid,),
             ).fetchall()
         else:
             rows = con.execute(
-                "SELECT date, value FROM calculated "
-                "WHERE series_id = ? AND calc_type = ? ORDER BY date",
+                "SELECT date::text, value FROM calculated "
+                "WHERE series_id = %s AND calc_type = %s ORDER BY date",
                 (sid, calc_type),
             ).fetchall()
         series_data[sid] = {d: v for d, v in rows}
         all_dates.update(d for d, _ in rows)
-
-    con.close()
 
     dates_sorted = sorted(all_dates)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -84,12 +84,14 @@ def _export_group_unified(group_id: str, series_ids: list, output_dir: Path,
     calc_family: "period" or "yoy" — resolves to period_pct/period_pp or yoy_pct/yoy_pp
                  based on whether each series is a percent-unit series.
     """
-    con = sqlite3.connect(db_path)
+    con = connect()
 
     names = {}
     for sid in series_ids:
         row = con.execute(
-            "SELECT DISTINCT name FROM observations WHERE series_id = ?", (sid,)
+            "SELECT name FROM observations WHERE series_id = %s "
+            "ORDER BY date LIMIT 1",
+            (sid,)
         ).fetchone()
         names[sid] = row[0] if row else sid
 
@@ -98,14 +100,12 @@ def _export_group_unified(group_id: str, series_ids: list, output_dir: Path,
     for sid in series_ids:
         ct = f"{calc_family}_pp" if sid in pct_ids else f"{calc_family}_pct"
         rows = con.execute(
-            "SELECT date, value FROM calculated "
-            "WHERE series_id = ? AND calc_type = ? ORDER BY date",
+            "SELECT date::text, value FROM calculated "
+            "WHERE series_id = %s AND calc_type = %s ORDER BY date",
             (sid, ct),
         ).fetchall()
         series_data[sid] = {d: v for d, v in rows}
         all_dates.update(d for d, _ in rows)
-
-    con.close()
 
     dates_sorted = sorted(all_dates)
     output_dir.mkdir(parents=True, exist_ok=True)
