@@ -1,5 +1,5 @@
 #!/bin/bash
-# Wrapper for launchd — appends to single log file, enforces 10 min timeout
+# Wrapper for launchd — appends to single log file, enforces 20 min timeout
 # Skips weekends unless the previous run had errors
 # Writes to run.error.log when anything goes wrong
 cd /Users/mikesimonsen/projects/econ-data
@@ -23,15 +23,15 @@ else
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] run.sh started" >> "$LOG"
 fi
 
-/opt/homebrew/bin/gtimeout 600 /Users/mikesimonsen/projects/econ-data/.venv/bin/python run.py \
+/opt/homebrew/bin/gtimeout 1200 /Users/mikesimonsen/projects/econ-data/.venv/bin/python run.py \
     >> "$LOG" 2>&1
 EXIT=$?
 
 NOW=$(date '+%Y-%m-%d %H:%M:%S')
 
 if [ $EXIT -eq 124 ]; then
-    echo "[$NOW] run.sh KILLED — exceeded 10 min timeout" >> "$LOG"
-    echo "[$NOW] TIMEOUT: run.py exceeded 10 min limit and was killed" >> "$ERR"
+    echo "[$NOW] run.sh KILLED — exceeded 20 min timeout" >> "$LOG"
+    echo "[$NOW] TIMEOUT: run.py exceeded 20 min limit and was killed" >> "$ERR"
 elif [ $EXIT -ne 0 ]; then
     echo "[$NOW] run.sh finished with error (exit=$EXIT)" >> "$LOG"
     echo "[$NOW] CRASH: run.py exited with code $EXIT" >> "$ERR"
