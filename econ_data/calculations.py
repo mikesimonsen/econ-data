@@ -13,26 +13,23 @@ half the series' median observation gap ensures we don't match across
 gaps that are too large (e.g. a 6-month hiatus).
 """
 import bisect
-import sqlite3
 from datetime import date as date_type, timedelta
 from pathlib import Path
 
 from econ_data.config import load, percent_series
-from econ_data.store_sqlite import DB_PATH
+from econ_data.db import connect
+from econ_data.store_sqlite import DB_PATH  # signature compat for unmigrated callers
+
+UPSERT_SQL = (
+    "INSERT INTO calculated (series_id, calc_type, date, value) "
+    "VALUES (%s, %s, %s, %s) "
+    "ON CONFLICT (series_id, calc_type, date) DO UPDATE SET value = EXCLUDED.value"
+)
 
 
 def compute_all(db_path: Path = DB_PATH) -> int:
     """Compute all derived series and save to the calculated table. Returns rows written."""
-    con = sqlite3.connect(db_path)
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS calculated (
-            series_id   TEXT    NOT NULL,
-            calc_type   TEXT    NOT NULL,
-            date        TEXT    NOT NULL,
-            value       REAL    NOT NULL,
-            PRIMARY KEY (series_id, calc_type, date)
-        )
-    """)
+    con = connect()
 
     cfg = load()
     pct_ids = percent_series(cfg)
@@ -44,7 +41,7 @@ def compute_all(db_path: Path = DB_PATH) -> int:
     total = 0
     for series_id in series_ids:
         rows = con.execute(
-            "SELECT date, value FROM observations WHERE series_id = ? ORDER BY date",
+            "SELECT date::text, value FROM observations WHERE series_id = %s ORDER BY date",
             (series_id,),
         ).fetchall()
 
@@ -56,7 +53,6 @@ def compute_all(db_path: Path = DB_PATH) -> int:
             total += _compute_yoy_pct(con, series_id, rows)
 
     con.commit()
-    con.close()
     return total
 
 
@@ -105,10 +101,8 @@ def _compute_period_pct(con, series_id, rows):
             pct = (cur_val - prev_val) / prev_val * 100
             calcs.append((series_id, "period_pct", cur_date, round(pct, 2)))
 
-    con.executemany(
-        "INSERT OR REPLACE INTO calculated (series_id, calc_type, date, value) VALUES (?, ?, ?, ?)",
-        calcs,
-    )
+    with con.cursor() as cur:
+        cur.executemany(UPSERT_SQL, calcs)
     return len(calcs)
 
 
@@ -129,10 +123,8 @@ def _compute_yoy_pct(con, series_id, rows):
             pct = (value - prev_val) / prev_val * 100
             calcs.append((series_id, "yoy_pct", date_str, round(pct, 2)))
 
-    con.executemany(
-        "INSERT OR REPLACE INTO calculated (series_id, calc_type, date, value) VALUES (?, ?, ?, ?)",
-        calcs,
-    )
+    with con.cursor() as cur:
+        cur.executemany(UPSERT_SQL, calcs)
     return len(calcs)
 
 
@@ -145,10 +137,8 @@ def _compute_period_pp(con, series_id, rows):
         diff = cur_val - prev_val
         calcs.append((series_id, "period_pp", cur_date, round(diff, 2)))
 
-    con.executemany(
-        "INSERT OR REPLACE INTO calculated (series_id, calc_type, date, value) VALUES (?, ?, ?, ?)",
-        calcs,
-    )
+    with con.cursor() as cur:
+        cur.executemany(UPSERT_SQL, calcs)
     return len(calcs)
 
 
@@ -169,10 +159,8 @@ def _compute_yoy_pp(con, series_id, rows):
             diff = value - prev_val
             calcs.append((series_id, "yoy_pp", date_str, round(diff, 2)))
 
-    con.executemany(
-        "INSERT OR REPLACE INTO calculated (series_id, calc_type, date, value) VALUES (?, ?, ?, ?)",
-        calcs,
-    )
+    with con.cursor() as cur:
+        cur.executemany(UPSERT_SQL, calcs)
     return len(calcs)
 
 

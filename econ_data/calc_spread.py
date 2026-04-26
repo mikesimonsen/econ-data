@@ -8,13 +8,13 @@ Three derived series:
 """
 from __future__ import annotations
 
-import sqlite3
 from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
+from econ_data.db import connect
 from econ_data.fetch import Observation
-from econ_data.store_sqlite import DB_PATH
+from econ_data.store_sqlite import DB_PATH  # signature compat for unmigrated callers
 
 MORTGAGE_ID = "MND_30YR_FIXED"
 TREASURY_ID = "DGS10"
@@ -39,20 +39,18 @@ def compute_spread(last_dates: dict = None,
     if last_dates is None:
         last_dates = {}
 
-    con = sqlite3.connect(db_path)
+    con = connect()
 
     # Load both underlying series
     mnd = dict(con.execute(
-        "SELECT date, value FROM observations WHERE series_id = ? ORDER BY date",
+        "SELECT date::text, value FROM observations WHERE series_id = %s ORDER BY date",
         (MORTGAGE_ID,),
     ).fetchall())
 
     dgs = dict(con.execute(
-        "SELECT date, value FROM observations WHERE series_id = ? ORDER BY date",
+        "SELECT date::text, value FROM observations WHERE series_id = %s ORDER BY date",
         (TREASURY_ID,),
     ).fetchall())
-
-    con.close()
 
     all_new = []
     counts = {sid: 0 for sid in ALL_IDS}

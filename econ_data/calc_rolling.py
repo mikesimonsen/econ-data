@@ -7,12 +7,12 @@ before compute_all().
 """
 from __future__ import annotations
 
-import sqlite3
 from datetime import date
 from pathlib import Path
 
+from econ_data.db import connect
 from econ_data.fetch import Observation
-from econ_data.store_sqlite import DB_PATH
+from econ_data.store_sqlite import DB_PATH  # signature compat for unmigrated callers
 
 # Each entry: (source_series_id, window, derived_series_id, name)
 ROLLING_SERIES = [
@@ -32,7 +32,7 @@ def compute_rolling(last_dates: dict = None,
     if last_dates is None:
         last_dates = {}
 
-    con = sqlite3.connect(db_path)
+    con = connect()
     all_new = []
     counts = {}
 
@@ -40,7 +40,7 @@ def compute_rolling(last_dates: dict = None,
         last = last_dates.get(derived_id)
 
         rows = con.execute(
-            "SELECT date, value FROM observations WHERE series_id = ? "
+            "SELECT date::text, value FROM observations WHERE series_id = %s "
             "ORDER BY date",
             (source_id,),
         ).fetchall()
@@ -68,5 +68,4 @@ def compute_rolling(last_dates: dict = None,
         all_new.extend(new_obs)
         counts[derived_id] = len(new_obs)
 
-    con.close()
     return {"new": all_new, "counts": counts}
