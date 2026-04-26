@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -20,7 +19,8 @@ from pathlib import Path
 import anthropic
 from dotenv import load_dotenv
 
-from econ_data.store_sqlite import DB_PATH
+from econ_data.db import connect
+from econ_data.store_sqlite import DB_PATH  # signature compat for unmigrated callers
 
 load_dotenv()
 
@@ -140,26 +140,6 @@ TRACKED = [
     },
 ]
 
-CREATE_TABLE = """
-CREATE TABLE IF NOT EXISTS expectations (
-    series_id    TEXT    NOT NULL,
-    period       TEXT    NOT NULL,
-    expected     REAL,
-    compare_type TEXT    NOT NULL,
-    source_text  TEXT,
-    fetched_at   TEXT    NOT NULL,
-    PRIMARY KEY (series_id, period)
-);
-CREATE TABLE IF NOT EXISTS release_calendar (
-    release_date TEXT    NOT NULL,
-    report       TEXT    NOT NULL,
-    series_ids   TEXT    NOT NULL,
-    confirmed    INTEGER DEFAULT 1,
-    updated_at   TEXT    NOT NULL,
-    PRIMARY KEY (release_date, report)
-);
-"""
-
 # Confirmed release dates from agency websites (seeded once, refreshed weekly).
 # Claims (ICSA) is every Thursday and doesn't need calendar entries.
 SEED_CALENDAR = [
@@ -183,31 +163,28 @@ SEED_CALENDAR = [
 ]
 
 
-def _connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    con = sqlite3.connect(db_path)
-    con.executescript(CREATE_TABLE)
-    return con
+def _connect(db_path: Path = DB_PATH):
+    """Singleton Postgres connection. db_path arg ignored (signature compat)."""
+    return connect()
 
 
 def seed_calendar(db_path: Path = DB_PATH) -> int:
     """Insert seed release dates if the calendar is empty."""
-    con = _connect(db_path)
+    con = connect()
     existing = con.execute("SELECT COUNT(*) FROM release_calendar").fetchone()[0]
     if existing > 0:
-        con.close()
         return 0
-    now = datetime.now().isoformat(timespec="seconds")
+    now = datetime.now()
     for release_date, report, series_ids in SEED_CALENDAR:
         con.execute(
-            "INSERT OR IGNORE INTO release_calendar "
+            "INSERT INTO release_calendar "
             "(release_date, report, series_ids, confirmed, updated_at) "
-            "VALUES (?, ?, ?, 1, ?)",
+            "VALUES (%s, %s, %s, TRUE, %s) "
+            "ON CONFLICT (release_date, report) DO NOTHING",
             (release_date, report, series_ids, now),
         )
     con.commit()
-    count = con.execute("SELECT COUNT(*) FROM release_calendar").fetchone()[0]
-    con.close()
-    return count
+    return con.execute("SELECT COUNT(*) FROM release_calendar").fetchone()[0]
 
 
 def get_calendar_releases(days_ahead: int = 7,
@@ -221,14 +198,12 @@ def get_calendar_releases(days_ahead: int = 7,
 
     seed_calendar(db_path)
 
-    con = _connect(db_path)
-    rows = con.execute(
-        "SELECT release_date, report, series_ids FROM release_calendar "
-        "WHERE release_date >= ? AND release_date <= ? "
+    rows = connect().execute(
+        "SELECT release_date::text, report, series_ids FROM release_calendar "
+        "WHERE release_date >= %s AND release_date <= %s "
         "ORDER BY release_date",
         (today.isoformat(), cutoff),
     ).fetchall()
-    con.close()
 
     results = []
     for release_date, report, series_ids in rows:
@@ -286,8 +261,8 @@ def refresh_release_calendar(db_path: Path = DB_PATH) -> int:
             reports[name].append(sid)
 
     client = anthropic.Anthropic(api_key=api_key, timeout=60.0)
-    con = _connect(db_path)
-    now = datetime.now().isoformat(timespec="seconds")
+    con = connect()
+    now = datetime.now()
     updated = 0
 
     for report_name, series_ids in reports.items():
@@ -346,9 +321,12 @@ def refresh_release_calendar(db_path: Path = DB_PATH) -> int:
             except ValueError:
                 continue
             con.execute(
-                "INSERT OR REPLACE INTO release_calendar "
+                "INSERT INTO release_calendar "
                 "(release_date, report, series_ids, confirmed, updated_at) "
-                "VALUES (?, ?, ?, 1, ?)",
+                "VALUES (%s, %s, %s, TRUE, %s) "
+                "ON CONFLICT (release_date, report) DO UPDATE SET "
+                "series_ids = EXCLUDED.series_ids, confirmed = TRUE, "
+                "updated_at = EXCLUDED.updated_at",
                 (d, report_name, series_str, now),
             )
             updated += 1
@@ -357,7 +335,6 @@ def refresh_release_calendar(db_path: Path = DB_PATH) -> int:
         time.sleep(1)
 
     con.commit()
-    con.close()
     return updated
 
 
@@ -371,7 +348,7 @@ def get_upcoming_releases(days_ahead: int = 7,
     today = date.today()
     cutoff = today + timedelta(days=days_ahead)
 
-    con = _connect(db_path)
+    con = connect()
     expectations = {}
     rows = con.execute(
         "SELECT series_id, period, expected, compare_type, source_text "
@@ -406,8 +383,8 @@ def get_upcoming_releases(days_ahead: int = 7,
             period = _reference_period(sid, upcoming=True, db_path=db_path)
 
             prior_row = con.execute(
-                "SELECT date, value FROM observations "
-                "WHERE series_id = ? ORDER BY date DESC LIMIT 1",
+                "SELECT date::text, value FROM observations "
+                "WHERE series_id = %s ORDER BY date DESC LIMIT 1",
                 (sid,),
             ).fetchone()
 
@@ -428,7 +405,6 @@ def get_upcoming_releases(days_ahead: int = 7,
                 "compare_type": spec["compare"],
             })
 
-    con.close()
     results.sort(key=lambda r: r["release_date"])
     return results
 
@@ -440,12 +416,10 @@ def _reference_period(series_id: str, upcoming: bool = True,
     upcoming=True: next period (consensus for data not yet released)
     upcoming=False: current latest period (retroactive consensus capture)
     """
-    con = sqlite3.connect(db_path)
-    row = con.execute(
-        "SELECT MAX(date) FROM observations WHERE series_id = ?",
+    row = connect().execute(
+        "SELECT MAX(date)::text FROM observations WHERE series_id = %s",
         (series_id,),
     ).fetchone()
-    con.close()
 
     if not row or not row[0]:
         return date.today().strftime("%Y-%m")
@@ -470,12 +444,10 @@ def _reference_period(series_id: str, upcoming: bool = True,
 def _already_fetched(series_id: str, period: str,
                      db_path: Path = DB_PATH) -> bool:
     """Check if we already have an expectation for this series/period."""
-    con = _connect(db_path)
-    row = con.execute(
-        "SELECT 1 FROM expectations WHERE series_id = ? AND period = ?",
+    row = connect().execute(
+        "SELECT 1 FROM expectations WHERE series_id = %s AND period = %s",
         (series_id, period),
     ).fetchone()
-    con.close()
     return row is not None
 
 
@@ -614,8 +586,8 @@ def fetch_expectations(lookahead_days: int = 3,
     from datetime import datetime
 
     results = []
-    con = _connect(db_path)
-    now = datetime.now().isoformat(timespec="seconds")
+    con = connect()
+    now = datetime.now()
 
     # Use the release calendar to determine what's coming
     calendar = get_calendar_releases(lookahead_days, db_path)
@@ -641,9 +613,12 @@ def fetch_expectations(lookahead_days: int = 3,
 
         if result and result["expected"] is not None:
             con.execute(
-                "INSERT OR REPLACE INTO expectations "
+                "INSERT INTO expectations "
                 "(series_id, period, expected, compare_type, source_text, fetched_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (series_id, period) DO UPDATE SET "
+                "expected = EXCLUDED.expected, compare_type = EXCLUDED.compare_type, "
+                "source_text = EXCLUDED.source_text, fetched_at = EXCLUDED.fetched_at",
                 (spec["series_id"], period, result["expected"],
                  spec["compare"], result["source_text"], now),
             )
@@ -662,18 +637,15 @@ def fetch_expectations(lookahead_days: int = 3,
         time.sleep(1)  # rate limit between searches
 
     con.commit()
-    con.close()
     return results
 
 
 def get_expectations(db_path: Path = DB_PATH) -> dict:
     """Return all stored expectations as {series_id: {period, expected, compare_type}}."""
-    con = _connect(db_path)
-    rows = con.execute(
+    rows = connect().execute(
         "SELECT series_id, period, expected, compare_type, source_text "
         "FROM expectations ORDER BY period DESC"
     ).fetchall()
-    con.close()
 
     result = {}
     for sid, period, expected, ctype, source in rows:
@@ -700,13 +672,11 @@ def check_surprise(series_id: str, actual_value: float,
     Returns something like "Beat expectations (actual 178K vs expected 60K)"
     or None if no expectation stored or within normal range.
     """
-    con = _connect(db_path)
-    row = con.execute(
+    row = connect().execute(
         "SELECT expected, compare_type FROM expectations "
-        "WHERE series_id = ? ORDER BY period DESC LIMIT 1",
+        "WHERE series_id = %s ORDER BY period DESC LIMIT 1",
         (series_id,),
     ).fetchone()
-    con.close()
 
     if not row:
         return None
@@ -717,13 +687,11 @@ def check_surprise(series_id: str, actual_value: float,
     if compare_type == "change":
         if period_pct is None:
             return None
-        con = sqlite3.connect(db_path)
-        rows = con.execute(
-            "SELECT value FROM observations WHERE series_id = ? "
+        rows = connect().execute(
+            "SELECT value FROM observations WHERE series_id = %s "
             "ORDER BY date DESC LIMIT 2",
             (series_id,),
         ).fetchall()
-        con.close()
         if len(rows) < 2:
             return None
         actual_change = rows[0][0] - rows[1][0]

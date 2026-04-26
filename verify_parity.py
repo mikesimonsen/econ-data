@@ -21,10 +21,11 @@ from dotenv import load_dotenv
 
 SQLITE_PATH = Path(__file__).parent / "econ_data.db"
 
+# expectations / fed_expectations / release_calendar are intentionally
+# excluded — Postgres is now the primary writer for those (see 3d).
 TABLES = [
     "observations", "calculated", "revisions",
     "export_log", "fetch_log",
-    "expectations", "fed_expectations", "release_calendar",
     "groups", "group_members",
 ]
 
@@ -76,7 +77,7 @@ def main() -> int:
             print(f"  {m}", file=sys.stderr)
         return 1
 
-    print("Parity OK: all 10 tables match, spot checks pass.")
+    print(f"Parity OK: all {len(TABLES)} tables match, spot checks pass.")
     return 0
 
 

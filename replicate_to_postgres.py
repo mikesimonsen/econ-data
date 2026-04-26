@@ -24,18 +24,17 @@ from dotenv import load_dotenv
 from migrate_to_postgres import (
     migrate_observations, migrate_calculated, migrate_revisions,
     migrate_export_log, migrate_fetch_log,
-    migrate_expectations, migrate_fed_expectations, migrate_release_calendar,
 )
 
 SQLITE_PATH = Path(__file__).parent / "econ_data.db"
 
-# Order matters for TRUNCATE only because group_members references groups,
-# but TRUNCATE ... CASCADE handles it. Listing all tables in one statement is
-# atomic.
+# expectations / fed_expectations / release_calendar are intentionally NOT
+# replicated. As of 3d, those modules write directly to Postgres and SQLite
+# is no longer the source of truth for them. Replicating would clobber fresh
+# Postgres writes with stale SQLite snapshots.
 ALL_TABLES = [
     "observations", "calculated", "revisions",
     "export_log", "fetch_log",
-    "expectations", "fed_expectations", "release_calendar",
     "groups", "group_members",
 ]
 
@@ -77,16 +76,13 @@ def main() -> int:
             cur.execute(f"TRUNCATE TABLE {', '.join(ALL_TABLES)} CASCADE")
 
         n = {}
-        n["observations"]     = migrate_observations(sq, pg)
-        n["calculated"]       = migrate_calculated(sq, pg)
-        n["revisions"]        = migrate_revisions(sq, pg)
-        n["export_log"]       = migrate_export_log(sq, pg)
-        n["fetch_log"]        = migrate_fetch_log(sq, pg)
-        n["expectations"]     = migrate_expectations(sq, pg)
-        n["fed_expectations"] = migrate_fed_expectations(sq, pg)
-        n["release_calendar"] = migrate_release_calendar(sq, pg)
-        n["groups"]           = migrate_groups(sq, pg)
-        n["group_members"]    = migrate_group_members(sq, pg)
+        n["observations"]  = migrate_observations(sq, pg)
+        n["calculated"]    = migrate_calculated(sq, pg)
+        n["revisions"]     = migrate_revisions(sq, pg)
+        n["export_log"]    = migrate_export_log(sq, pg)
+        n["fetch_log"]     = migrate_fetch_log(sq, pg)
+        n["groups"]        = migrate_groups(sq, pg)
+        n["group_members"] = migrate_group_members(sq, pg)
         # Commit on `with` exit; everything is one transaction.
 
     sq.close()

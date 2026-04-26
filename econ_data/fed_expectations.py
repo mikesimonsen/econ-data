@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -24,7 +23,8 @@ from pathlib import Path
 import anthropic
 from dotenv import load_dotenv
 
-from econ_data.store_sqlite import DB_PATH
+from econ_data.db import connect
+from econ_data.store_sqlite import DB_PATH  # signature compat for unmigrated callers
 
 load_dotenv()
 
@@ -49,21 +49,9 @@ FOMC_MEETINGS = [
 ]
 
 
-CREATE_TABLE = """
-CREATE TABLE IF NOT EXISTS fed_expectations (
-    meeting_date  TEXT    NOT NULL,
-    outcome_bps   INTEGER NOT NULL,
-    probability   REAL    NOT NULL,
-    captured_at   TEXT    NOT NULL,
-    PRIMARY KEY (meeting_date, outcome_bps)
-)
-"""
-
-
-def _connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    con = sqlite3.connect(db_path)
-    con.execute(CREATE_TABLE)
-    return con
+def _connect(db_path: Path = DB_PATH):
+    """Singleton Postgres connection. db_path arg ignored (signature compat)."""
+    return connect()
 
 
 def get_past_meetings(today: date | None = None) -> list[date]:
@@ -90,12 +78,10 @@ def get_meeting_changes(db_path: Path = DB_PATH) -> dict[str, float]:
     Compares effective Fed Funds rate ~3 days before and ~3 days after
     each meeting. Returns {meeting_date_iso: change_pp}.
     """
-    con = sqlite3.connect(db_path)
-    rows = con.execute(
-        "SELECT date, value FROM observations WHERE series_id = 'DFF' "
+    rows = connect().execute(
+        "SELECT date::text, value FROM observations WHERE series_id = 'DFF' "
         "ORDER BY date"
     ).fetchall()
-    con.close()
 
     if not rows:
         return {}
@@ -145,12 +131,10 @@ def get_current_target_range(db_path: Path = DB_PATH) -> tuple[float, float] | N
     The Fed sets a 25bp target range; the effective rate trades within it.
     We round the latest DFF reading down to the nearest 25bp lower bound.
     """
-    con = sqlite3.connect(db_path)
-    row = con.execute(
+    row = connect().execute(
         "SELECT value FROM observations WHERE series_id = 'DFF' "
         "ORDER BY date DESC LIMIT 1"
     ).fetchone()
-    con.close()
     if not row:
         return None
     rate = row[0]
@@ -166,30 +150,27 @@ def store_expectations(meeting_date: str,
 
     probabilities: {outcome_bps: probability}, e.g. {-25: 0.40, 0: 0.60}
     """
-    con = _connect(db_path)
-    now = datetime.now().isoformat(timespec="seconds")
+    con = connect()
+    now = datetime.now()
     # Clear any existing rows for this meeting (snapshot replaces)
-    con.execute("DELETE FROM fed_expectations WHERE meeting_date = ?",
+    con.execute("DELETE FROM fed_expectations WHERE meeting_date = %s",
                 (meeting_date,))
     for bps, prob in probabilities.items():
         con.execute(
             "INSERT INTO fed_expectations "
             "(meeting_date, outcome_bps, probability, captured_at) "
-            "VALUES (?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s)",
             (meeting_date, int(bps), float(prob), now),
         )
     con.commit()
-    con.close()
 
 
 def get_expectations(db_path: Path = DB_PATH) -> dict[str, dict]:
-    """Return all stored expectations as {meeting_date: {bps: prob, ...}}."""
-    con = _connect(db_path)
-    rows = con.execute(
-        "SELECT meeting_date, outcome_bps, probability, captured_at "
+    """Return all stored expectations as {meeting_date_iso: {bps: prob, ...}}."""
+    rows = connect().execute(
+        "SELECT meeting_date::text, outcome_bps, probability, captured_at::text "
         "FROM fed_expectations ORDER BY meeting_date, outcome_bps"
     ).fetchall()
-    con.close()
 
     result = {}
     for meeting, bps, prob, captured in rows:
@@ -326,13 +307,11 @@ def render_fed_chart(db_path: Path = DB_PATH,
         end_date = date(y, m, 28)
 
     # ── Historical DFF data ─────────────────────────────────
-    con = sqlite3.connect(db_path)
-    rows = con.execute(
-        "SELECT date, value FROM observations WHERE series_id = 'DFF' "
-        "AND date >= ? ORDER BY date",
-        (start_date.isoformat(),),
+    rows = connect().execute(
+        "SELECT date::text, value FROM observations WHERE series_id = 'DFF' "
+        "AND date >= %s ORDER BY date",
+        (start_date,),
     ).fetchall()
-    con.close()
 
     if not rows:
         return "<p class='muted'>No Fed Funds data available.</p>"
