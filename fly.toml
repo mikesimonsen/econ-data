@@ -6,3 +6,8 @@ primary_region = "iad"  # us-east-2 (Ohio); closest Fly region to default Neon. 
 
 # Intentionally NO [http_service] / [[services]] — this is a cron app, not a web app.
 # Machines are created on-demand by `fly machines run --schedule daily`.
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "2gb"   # default 256 MB OOM-killed pandas + briefing. 2 GB has comfortable headroom.
