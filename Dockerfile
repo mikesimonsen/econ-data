@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir \
     "openpyxl>=3.1" \
     "psycopg[binary]>=3.2" \
     "python-dotenv>=1.0" \
+    "pyyaml>=6.0" \
     "requests>=2.31"
 
 # Entrypoint only — repo contents come from the runtime git clone.
