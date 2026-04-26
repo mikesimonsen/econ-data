@@ -21,10 +21,11 @@ from dotenv import load_dotenv
 
 SQLITE_PATH = Path(__file__).parent / "econ_data.db"
 
-# expectations / fed_expectations / release_calendar are intentionally
-# excluded — Postgres is now the primary writer for those (see 3d).
+# Tables NOT verified (Postgres is the primary writer; SQLite is stale):
+#   - calculated (3b)
+#   - expectations, fed_expectations, release_calendar (3d)
 TABLES = [
-    "observations", "calculated", "revisions",
+    "observations", "revisions",
     "export_log", "fetch_log",
     "groups", "group_members",
 ]

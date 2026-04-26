@@ -11,11 +11,11 @@ import csv
 import io
 import json
 import math
-import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from econ_data.store_sqlite import DB_PATH, get_recent_revisions
+from econ_data.db import connect
+from econ_data.store_sqlite import DB_PATH, get_recent_revisions  # signature compat / SQLite-backed log helper
 from econ_data.summary import generate_summary
 
 # Extra search keywords per group so users can find series by concept,
@@ -145,13 +145,11 @@ def _format_tick(v: float, *, is_yoy: bool) -> str:
 def _sparkline_data(series_id: str, n: int = 24,
                     db_path: Path = DB_PATH) -> list:
     """Return last n observations as [(date, value), ...] for sparklines."""
-    con = sqlite3.connect(db_path)
-    rows = con.execute(
-        "SELECT date, value FROM observations "
-        "WHERE series_id = ? ORDER BY date DESC LIMIT ?",
+    rows = connect().execute(
+        "SELECT date::text, value FROM observations "
+        "WHERE series_id = %s ORDER BY date DESC LIMIT %s",
         (series_id, n),
     ).fetchall()
-    con.close()
     return list(reversed(rows))
 
 
@@ -277,27 +275,26 @@ def _trend_arrow(a: dict) -> str:
 def _series_csv(series_id: str, name: str, db_path: Path = DB_PATH,
                 revisions: list = None) -> str:
     """Build a Flourish-ready CSV string for a series, with revision columns."""
-    con = sqlite3.connect(db_path)
+    con = connect()
     rows = con.execute(
-        "SELECT date, value FROM observations "
-        "WHERE series_id = ? ORDER BY date",
+        "SELECT date::text, value FROM observations "
+        "WHERE series_id = %s ORDER BY date",
         (series_id,),
     ).fetchall()
 
     # Get the right calc types
     period_rows = con.execute(
-        "SELECT date, value FROM calculated "
-        "WHERE series_id = ? AND calc_type IN ('period_pct', 'period_pp') "
+        "SELECT date::text, value FROM calculated "
+        "WHERE series_id = %s AND calc_type IN ('period_pct', 'period_pp') "
         "ORDER BY date",
         (series_id,),
     ).fetchall()
     yoy_rows = con.execute(
-        "SELECT date, value FROM calculated "
-        "WHERE series_id = ? AND calc_type IN ('yoy_pct', 'yoy_pp') "
+        "SELECT date::text, value FROM calculated "
+        "WHERE series_id = %s AND calc_type IN ('yoy_pct', 'yoy_pp') "
         "ORDER BY date",
         (series_id,),
     ).fetchall()
-    con.close()
 
     period_map = dict(period_rows)
     yoy_map = dict(yoy_rows)
@@ -322,7 +319,7 @@ def _series_csv(series_id: str, name: str, db_path: Path = DB_PATH,
 def _group_csv(group_id: str, series_list: list,
                db_path: Path = DB_PATH) -> str:
     """Build a Flourish-ready CSV for a whole group (wide format)."""
-    con = sqlite3.connect(db_path)
+    con = connect()
     all_dates = set()
     series_data = {}
     names = {}
@@ -331,13 +328,12 @@ def _group_csv(group_id: str, series_list: list,
         sid = a["series_id"]
         names[sid] = a["name"]
         rows = con.execute(
-            "SELECT date, value FROM observations "
-            "WHERE series_id = ? ORDER BY date", (sid,),
+            "SELECT date::text, value FROM observations "
+            "WHERE series_id = %s ORDER BY date", (sid,),
         ).fetchall()
         series_data[sid] = dict(rows)
         all_dates.update(d for d, _ in rows)
 
-    con.close()
     dates = sorted(all_dates)
 
     buf = io.StringIO()
@@ -350,10 +346,13 @@ def _group_csv(group_id: str, series_list: list,
 
 
 def _release_dates(db_path: Path = DB_PATH) -> dict:
-    """Return {series_id: captured_at} for the latest observation of each series."""
-    con = sqlite3.connect(db_path)
-    rows = con.execute("""
-        SELECT o.series_id, o.captured_at
+    """Return {series_id: captured_at_iso} for the latest observation of each series."""
+    # to_char yields "YYYY-MM-DDTHH:MM:SS" matching SQLite's stored format,
+    # which Python 3.9's datetime.fromisoformat() can parse (the default
+    # TIMESTAMPTZ::text rendering "+00" trailing offset breaks it on 3.9).
+    rows = connect().execute("""
+        SELECT o.series_id,
+               to_char(o.captured_at, 'YYYY-MM-DD"T"HH24:MI:SS')
         FROM observations o
         INNER JOIN (
             SELECT series_id, MAX(date) as max_date
@@ -361,7 +360,6 @@ def _release_dates(db_path: Path = DB_PATH) -> dict:
         ) latest ON o.series_id = latest.series_id AND o.date = latest.max_date
         WHERE o.captured_at IS NOT NULL
     """).fetchall()
-    con.close()
     return {sid: ts for sid, ts in rows}
 
 
@@ -999,21 +997,20 @@ def _chart_history_length(a: dict, freq: str) -> int:
 def _chart_data(series_id: str, chart_type: str, n: int,
                 db_path: Path = DB_PATH) -> list:
     """Fetch data for a hero chart. Returns [(date, value), ...]."""
-    con = sqlite3.connect(db_path)
+    con = connect()
     if chart_type == "yoy":
         rows = con.execute(
-            "SELECT date, value FROM calculated "
-            "WHERE series_id = ? AND calc_type IN ('yoy_pct', 'yoy_pp') "
-            "ORDER BY date DESC LIMIT ?",
+            "SELECT date::text, value FROM calculated "
+            "WHERE series_id = %s AND calc_type IN ('yoy_pct', 'yoy_pp') "
+            "ORDER BY date DESC LIMIT %s",
             (series_id, n),
         ).fetchall()
     else:
         rows = con.execute(
-            "SELECT date, value FROM observations "
-            "WHERE series_id = ? ORDER BY date DESC LIMIT ?",
+            "SELECT date::text, value FROM observations "
+            "WHERE series_id = %s ORDER BY date DESC LIMIT %s",
             (series_id, n),
         ).fetchall()
-    con.close()
     return list(reversed(rows))
 
 
@@ -1497,21 +1494,20 @@ def _housing_chart_data(series_id: str, chart_type: str, since: str,
     This avoids the problem where LIMIT N returns 8 months of weekly Altos
     data but 3 years of monthly Redfin data.
     """
-    con = sqlite3.connect(db_path)
+    con = connect()
     if chart_type == "yoy":
         rows = con.execute(
-            "SELECT date, value FROM calculated "
-            "WHERE series_id = ? AND calc_type IN ('yoy_pct', 'yoy_pp') "
-            "AND date >= ? ORDER BY date",
+            "SELECT date::text, value FROM calculated "
+            "WHERE series_id = %s AND calc_type IN ('yoy_pct', 'yoy_pp') "
+            "AND date >= %s ORDER BY date",
             (series_id, since),
         ).fetchall()
     else:
         rows = con.execute(
-            "SELECT date, value FROM observations "
-            "WHERE series_id = ? AND date >= ? ORDER BY date",
+            "SELECT date::text, value FROM observations "
+            "WHERE series_id = %s AND date >= %s ORDER BY date",
             (series_id, since),
         ).fetchall()
-    con.close()
     return rows
 
 

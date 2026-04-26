@@ -39,20 +39,22 @@ def compute_all(db_path: Path = DB_PATH) -> int:
     ).fetchall()]
 
     total = 0
-    for series_id in series_ids:
-        rows = con.execute(
-            "SELECT date::text, value FROM observations WHERE series_id = %s ORDER BY date",
-            (series_id,),
-        ).fetchall()
+    # Single transaction across all series so the ~hundred-thousand UPSERTs
+    # commit as one batch (autocommit=True would commit per-row otherwise).
+    with con.transaction():
+        for series_id in series_ids:
+            rows = con.execute(
+                "SELECT date::text, value FROM observations WHERE series_id = %s ORDER BY date",
+                (series_id,),
+            ).fetchall()
 
-        if series_id in pct_ids:
-            total += _compute_period_pp(con, series_id, rows)
-            total += _compute_yoy_pp(con, series_id, rows)
-        else:
-            total += _compute_period_pct(con, series_id, rows)
-            total += _compute_yoy_pct(con, series_id, rows)
+            if series_id in pct_ids:
+                total += _compute_period_pp(con, series_id, rows)
+                total += _compute_yoy_pp(con, series_id, rows)
+            else:
+                total += _compute_period_pct(con, series_id, rows)
+                total += _compute_yoy_pct(con, series_id, rows)
 
-    con.commit()
     return total
 
 

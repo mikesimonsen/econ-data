@@ -152,17 +152,18 @@ def store_expectations(meeting_date: str,
     """
     con = connect()
     now = datetime.now()
-    # Clear any existing rows for this meeting (snapshot replaces)
-    con.execute("DELETE FROM fed_expectations WHERE meeting_date = %s",
-                (meeting_date,))
-    for bps, prob in probabilities.items():
-        con.execute(
-            "INSERT INTO fed_expectations "
-            "(meeting_date, outcome_bps, probability, captured_at) "
-            "VALUES (%s, %s, %s, %s)",
-            (meeting_date, int(bps), float(prob), now),
-        )
-    con.commit()
+    # Snapshot replace: DELETE + INSERTs must be atomic so readers never
+    # observe an empty meeting (autocommit would commit each statement).
+    with con.transaction():
+        con.execute("DELETE FROM fed_expectations WHERE meeting_date = %s",
+                    (meeting_date,))
+        for bps, prob in probabilities.items():
+            con.execute(
+                "INSERT INTO fed_expectations "
+                "(meeting_date, outcome_bps, probability, captured_at) "
+                "VALUES (%s, %s, %s, %s)",
+                (meeting_date, int(bps), float(prob), now),
+            )
 
 
 def get_expectations(db_path: Path = DB_PATH) -> dict[str, dict]:

@@ -157,6 +157,16 @@ if __name__ == "__main__":
     if redfin_result["new"]:
         save(redfin_result["new"])
 
+    # Replicate fetcher writes to Postgres so compute_spread / compute_rolling
+    # (which read from Postgres) see today's fresh observations.
+    log("Replicating fetcher writes to Postgres...")
+    rep1 = subprocess.run([sys.executable, "replicate_to_postgres.py"],
+                          cwd=Path(__file__).parent, capture_output=True, text=True)
+    if rep1.returncode == 0:
+        log(rep1.stdout.strip())
+    else:
+        log(f"Replicator FAILED: {rep1.stderr.strip() or rep1.stdout.strip()}")
+
     # Compute mortgage rate spread (derived from MND + DGS10)
     spread_result = compute_spread(last_dates=get_last_dates())
     result["new"].extend(spread_result["new"])
@@ -199,6 +209,17 @@ if __name__ == "__main__":
         log("No new data or revisions.")
 
     save_groups(cfg)
+
+    # Second replicate: now that compute_spread / compute_rolling have written
+    # their new observations to SQLite, push to Postgres so compute_all and
+    # all downstream readers (summary, briefing, exports) see fresh data.
+    log("Replicating derived observations + groups to Postgres...")
+    rep2 = subprocess.run([sys.executable, "replicate_to_postgres.py"],
+                          cwd=Path(__file__).parent, capture_output=True, text=True)
+    if rep2.returncode == 0:
+        log(rep2.stdout.strip())
+    else:
+        log(f"Replicator FAILED: {rep2.stderr.strip() or rep2.stdout.strip()}")
 
     calc_rows = compute_all()
     log(f"Computed {calc_rows} calculated values (period %, YoY %).")
@@ -310,15 +331,9 @@ if __name__ == "__main__":
     except FileNotFoundError:
         log("Git not available — skipping push.")
 
-    # ── Replicate SQLite → Postgres (temporary, removed at Step 4 cutover) ──
-    log("Replicating to Postgres...")
-    rep = subprocess.run([sys.executable, "replicate_to_postgres.py"],
-                         cwd=Path(__file__).parent, capture_output=True, text=True)
-    if rep.returncode == 0:
-        log(rep.stdout.strip())
-    else:
-        log(f"Replicator FAILED: {rep.stderr.strip() or rep.stdout.strip()}")
-
+    # Verify SQLite ↔ Postgres parity for the replicated tables. (Replicates
+    # already ran before compute_all and downstream readers; nothing else
+    # writes to SQLite after this point in the cron.)
     ver = subprocess.run([sys.executable, "verify_parity.py"],
                          cwd=Path(__file__).parent, capture_output=True, text=True)
     if ver.returncode == 0:

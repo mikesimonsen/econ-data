@@ -25,8 +25,15 @@ _conn: Optional[psycopg.Connection] = None
 
 
 def connect() -> psycopg.Connection:
-    """Return the process-wide Postgres connection (lazy singleton)."""
+    """Return the process-wide Postgres connection (lazy singleton).
+
+    autocommit=True so SELECTs don't keep an idle transaction open between
+    calls — Neon kills idle-in-transaction connections after ~5 min, which
+    bites when run.py launches the replicator as a subprocess in between
+    other DB calls. For batch writes that need atomicity, wrap them in
+    `with conn.transaction(): ...`.
+    """
     global _conn
     if _conn is None or _conn.closed:
-        _conn = psycopg.connect(os.environ["DATABASE_URL"])
+        _conn = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True)
     return _conn

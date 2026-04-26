@@ -175,15 +175,15 @@ def seed_calendar(db_path: Path = DB_PATH) -> int:
     if existing > 0:
         return 0
     now = datetime.now()
-    for release_date, report, series_ids in SEED_CALENDAR:
-        con.execute(
-            "INSERT INTO release_calendar "
-            "(release_date, report, series_ids, confirmed, updated_at) "
-            "VALUES (%s, %s, %s, TRUE, %s) "
-            "ON CONFLICT (release_date, report) DO NOTHING",
-            (release_date, report, series_ids, now),
-        )
-    con.commit()
+    with con.transaction():
+        for release_date, report, series_ids in SEED_CALENDAR:
+            con.execute(
+                "INSERT INTO release_calendar "
+                "(release_date, report, series_ids, confirmed, updated_at) "
+                "VALUES (%s, %s, %s, TRUE, %s) "
+                "ON CONFLICT (release_date, report) DO NOTHING",
+                (release_date, report, series_ids, now),
+            )
     return con.execute("SELECT COUNT(*) FROM release_calendar").fetchone()[0]
 
 

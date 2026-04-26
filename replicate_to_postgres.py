@@ -22,18 +22,19 @@ import psycopg
 from dotenv import load_dotenv
 
 from migrate_to_postgres import (
-    migrate_observations, migrate_calculated, migrate_revisions,
+    migrate_observations, migrate_revisions,
     migrate_export_log, migrate_fetch_log,
 )
 
 SQLITE_PATH = Path(__file__).parent / "econ_data.db"
 
-# expectations / fed_expectations / release_calendar are intentionally NOT
-# replicated. As of 3d, those modules write directly to Postgres and SQLite
-# is no longer the source of truth for them. Replicating would clobber fresh
-# Postgres writes with stale SQLite snapshots.
+# Tables NOT replicated (Postgres is the primary writer for these now):
+#   - calculated (3b: compute_all writes only to PG)
+#   - expectations, fed_expectations, release_calendar (3d: those modules
+#     write only to PG)
+# Replicating these would clobber fresh PG writes with stale SQLite snapshots.
 ALL_TABLES = [
-    "observations", "calculated", "revisions",
+    "observations", "revisions",
     "export_log", "fetch_log",
     "groups", "group_members",
 ]
@@ -77,7 +78,6 @@ def main() -> int:
 
         n = {}
         n["observations"]  = migrate_observations(sq, pg)
-        n["calculated"]    = migrate_calculated(sq, pg)
         n["revisions"]     = migrate_revisions(sq, pg)
         n["export_log"]    = migrate_export_log(sq, pg)
         n["fetch_log"]     = migrate_fetch_log(sq, pg)
