@@ -1,0 +1,8 @@
+app = "econ-data-cron"
+primary_region = "iad"  # us-east-2 (Ohio); closest Fly region to default Neon. Change if your Neon DB is elsewhere.
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Intentionally NO [http_service] / [[services]] — this is a cron app, not a web app.
+# Machines are created on-demand by `fly machines run --schedule daily`.
