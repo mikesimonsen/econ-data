@@ -18,13 +18,13 @@ Housing-specific notes:
 """
 from __future__ import annotations
 
-import sqlite3
 import statistics
 from collections import defaultdict
 from datetime import date as date_type
 from pathlib import Path
 
-from econ_data.store_sqlite import DB_PATH
+from econ_data.db import connect
+from econ_data.store_sqlite import DB_PATH  # signature compat for unmigrated callers
 
 MIN_WEEKS = 104        # need ≥ 2 full years
 MA_HALF_WINDOW = 26    # 52-week centered moving average (26 each side)
@@ -41,12 +41,10 @@ def compute_seasonal_factors(
     if series_id in _cache:
         return _cache[series_id]
 
-    con = sqlite3.connect(db_path)
-    rows = con.execute(
-        "SELECT date, value FROM observations WHERE series_id = ? ORDER BY date",
+    rows = connect().execute(
+        "SELECT date::text, value FROM observations WHERE series_id = %s ORDER BY date",
         (series_id,),
     ).fetchall()
-    con.close()
 
     if len(rows) < MIN_WEEKS:
         _cache[series_id] = None

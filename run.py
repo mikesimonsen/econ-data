@@ -1,4 +1,5 @@
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -308,5 +309,21 @@ if __name__ == "__main__":
             log(f"Git push failed: {e.stderr.decode().strip() if e.stderr else e}")
     except FileNotFoundError:
         log("Git not available — skipping push.")
+
+    # ── Replicate SQLite → Postgres (temporary, removed at Step 4 cutover) ──
+    log("Replicating to Postgres...")
+    rep = subprocess.run([sys.executable, "replicate_to_postgres.py"],
+                         cwd=Path(__file__).parent, capture_output=True, text=True)
+    if rep.returncode == 0:
+        log(rep.stdout.strip())
+    else:
+        log(f"Replicator FAILED: {rep.stderr.strip() or rep.stdout.strip()}")
+
+    ver = subprocess.run([sys.executable, "verify_parity.py"],
+                         cwd=Path(__file__).parent, capture_output=True, text=True)
+    if ver.returncode == 0:
+        log(ver.stdout.strip())
+    else:
+        log(f"Parity check FAILED: {ver.stderr.strip() or ver.stdout.strip()}")
 
     log("Done.")

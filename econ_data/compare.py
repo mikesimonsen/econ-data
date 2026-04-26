@@ -2,14 +2,14 @@
 Compare multiple series side by side, aligned on common dates.
 """
 import csv
-import sqlite3
 from pathlib import Path
 
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from econ_data.store_sqlite import DB_PATH
+from econ_data.db import connect
+from econ_data.store_sqlite import DB_PATH  # signature compat for unmigrated callers
 
 DATA_TYPES = {
     "values":     {"label": "Values",          "table": "observations", "suffix": ""},
@@ -22,16 +22,13 @@ DATA_TYPES = {
 
 def search_series(query: str, db_path: Path = DB_PATH) -> list:
     """Search for series by keyword in ID or name. Returns [(series_id, name), ...]."""
-    con = sqlite3.connect(db_path)
     q = f"%{query}%"
-    rows = con.execute(
+    return connect().execute(
         "SELECT DISTINCT series_id, name FROM observations "
-        "WHERE series_id LIKE ? OR name LIKE ? COLLATE NOCASE "
+        "WHERE series_id ILIKE %s OR name ILIKE %s "
         "ORDER BY series_id",
         (q, q),
     ).fetchall()
-    con.close()
-    return rows
 
 
 def _query_aligned(series_ids: list, data_type: str, db_path: Path = DB_PATH) -> dict:
@@ -39,11 +36,11 @@ def _query_aligned(series_ids: list, data_type: str, db_path: Path = DB_PATH) ->
     Query series and align on common dates.
     Returns {"headers": [name, ...], "series_ids": [...], "dates": [...], "columns": [[val, ...], ...]}
     """
-    con = sqlite3.connect(db_path)
+    con = connect()
 
     # Get names
     names = {}
-    placeholders = ",".join("?" * len(series_ids))
+    placeholders = ",".join(["%s"] * len(series_ids))
     for sid, name in con.execute(
         f"SELECT DISTINCT series_id, name FROM observations WHERE series_id IN ({placeholders})",
         series_ids,
@@ -55,17 +52,15 @@ def _query_aligned(series_ids: list, data_type: str, db_path: Path = DB_PATH) ->
     for sid in series_ids:
         if data_type == "values":
             rows = con.execute(
-                "SELECT date, value FROM observations WHERE series_id = ? ORDER BY date",
+                "SELECT date::text, value FROM observations WHERE series_id = %s ORDER BY date",
                 (sid,),
             ).fetchall()
         else:
             rows = con.execute(
-                "SELECT date, value FROM calculated WHERE series_id = ? AND calc_type = ? ORDER BY date",
+                "SELECT date::text, value FROM calculated WHERE series_id = %s AND calc_type = %s ORDER BY date",
                 (sid, data_type),
             ).fetchall()
         series_data[sid] = dict(rows)
-
-    con.close()
 
     # Find common dates (inner join)
     if not series_data:

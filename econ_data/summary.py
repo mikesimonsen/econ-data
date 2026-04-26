@@ -1,14 +1,14 @@
 """
 Analyze latest data for trend direction, reversals, and unusual moves.
 """
-import sqlite3
 import statistics
 from pathlib import Path
 
 from econ_data.config import (load as load_config, percent_series,
                               seasonal_series, minimal_signal_series)
+from econ_data.db import connect
 from econ_data.seasonal import compute_seasonal_factors, sa_period_changes
-from econ_data.store_sqlite import DB_PATH
+from econ_data.store_sqlite import DB_PATH  # signature compat for unmigrated callers
 
 # Cached config lookups
 _PERCENT_IDS = None
@@ -63,23 +63,23 @@ def _detect_frequency(rows: list) -> str:
 
 def _get_series_data(series_id: str, db_path: Path = DB_PATH) -> dict:
     """Get raw values and calculated changes for a series."""
-    con = sqlite3.connect(db_path)
+    con = connect()
     is_pct = series_id in _get_percent_ids()
     period_type = "period_pp" if is_pct else "period_pct"
     yoy_type = "yoy_pp" if is_pct else "yoy_pct"
 
     rows = con.execute(
-        "SELECT date, value FROM observations WHERE series_id = ? ORDER BY date",
+        "SELECT date::text, value FROM observations WHERE series_id = %s ORDER BY date",
         (series_id,),
     ).fetchall()
 
     period_pct = dict(con.execute(
-        "SELECT date, value FROM calculated WHERE series_id = ? AND calc_type = ? ORDER BY date",
+        "SELECT date::text, value FROM calculated WHERE series_id = %s AND calc_type = %s ORDER BY date",
         (series_id, period_type),
     ).fetchall())
 
     yoy_pct = dict(con.execute(
-        "SELECT date, value FROM calculated WHERE series_id = ? AND calc_type = ? ORDER BY date",
+        "SELECT date::text, value FROM calculated WHERE series_id = %s AND calc_type = %s ORDER BY date",
         (series_id, yoy_type),
     ).fetchall())
 
@@ -87,13 +87,11 @@ def _get_series_data(series_id: str, db_path: Path = DB_PATH) -> dict:
     captured_at = None
     if rows:
         row = con.execute(
-            "SELECT captured_at FROM observations WHERE series_id = ? AND date = ?",
+            "SELECT captured_at::text FROM observations WHERE series_id = %s AND date = %s",
             (series_id, rows[-1][0]),
         ).fetchone()
         if row and row[0]:
             captured_at = row[0][:10]  # date portion only
-
-    con.close()
 
     return {"rows": rows, "period_pct": period_pct, "yoy_pct": yoy_pct,
             "is_percent": is_pct, "captured_at": captured_at}
