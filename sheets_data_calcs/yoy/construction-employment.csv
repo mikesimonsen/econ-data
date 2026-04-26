@@ -1,4 +1,5 @@
 date,All Employees - Construction YoY Chg,All Employees - Residential Building YoY Chg,All Employees - Nonresidential Building YoY Chg
+1939-12-01,0.26,,
 1940-01-01,-1.58,,
 1940-02-01,1.38,,
 1940-03-01,-0.9,,
@@ -550,7 +551,7 @@ date,All Employees - Construction YoY Chg,All Employees - Residential Building Y
 1985-09-01,6.03,,
 1985-10-01,6.06,,
 1985-11-01,5.67,,
-1985-12-01,5.05,,
+1985-12-01,5.05,6.55,
 1986-01-01,5.14,5.47,
 1986-02-01,5.19,6.57,
 1986-03-01,3.89,5.42,
@@ -610,7 +611,7 @@ date,All Employees - Construction YoY Chg,All Employees - Residential Building Y
 1990-09-01,-2.37,-7.51,
 1990-10-01,-3.98,-8.65,
 1990-11-01,-5.01,-10.49,
-1990-12-01,-4.94,-11.53,
+1990-12-01,-4.94,-11.53,-5.47
 1991-01-01,-8.3,-14.12,-7.02
 1991-02-01,-8.99,-15.13,-7.33
 1991-03-01,-9.48,-14.94,-7.84
