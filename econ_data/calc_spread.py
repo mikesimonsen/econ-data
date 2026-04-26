@@ -14,7 +14,7 @@ from pathlib import Path
 
 from econ_data.db import connect
 from econ_data.fetch import Observation
-from econ_data.store_sqlite import DB_PATH  # signature compat for unmigrated callers
+from econ_data.store import DB_PATH
 
 MORTGAGE_ID = "MND_30YR_FIXED"
 TREASURY_ID = "DGS10"

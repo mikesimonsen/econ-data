@@ -17,13 +17,13 @@ from econ_data.export import (
     to_csv,
     to_excel,
 )
-from econ_data.store_sqlite import save_export_log
+from econ_data.store import save_export_log
 
 
 def do_export(fmt, series_ids, output_dir, label="econ_data", group_id=None,
               data_type="values"):
     """Run the export and record it in the export log."""
-    from econ_data.store_sqlite import get_last_dates
+    from econ_data.store import get_last_dates
 
     last_dates = get_last_dates()
 

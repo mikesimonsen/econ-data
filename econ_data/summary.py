@@ -8,7 +8,7 @@ from econ_data.config import (load as load_config, percent_series,
                               seasonal_series, minimal_signal_series)
 from econ_data.db import connect
 from econ_data.seasonal import compute_seasonal_factors, sa_period_changes
-from econ_data.store_sqlite import DB_PATH  # signature compat for unmigrated callers
+from econ_data.store import DB_PATH
 
 # Cached config lookups
 _PERCENT_IDS = None

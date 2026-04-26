@@ -64,7 +64,7 @@ EXTRA_SERIES = [
 
 def _build_data_snapshot(cfg: dict, db_path=None) -> str:
     """Build a text snapshot of all housing-relevant data for the LLM."""
-    from econ_data.store_sqlite import DB_PATH
+    from econ_data.store import DB_PATH
     if db_path is None:
         db_path = DB_PATH
 

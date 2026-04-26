@@ -20,7 +20,7 @@ import anthropic
 from dotenv import load_dotenv
 
 from econ_data.db import connect
-from econ_data.store_sqlite import DB_PATH  # signature compat for unmigrated callers
+from econ_data.store import DB_PATH
 
 load_dotenv()
 

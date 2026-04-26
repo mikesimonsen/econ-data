@@ -6,7 +6,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from econ_data.db import connect
-from econ_data.store_sqlite import DB_PATH, get_export_log, get_last_dates  # signature compat / SQLite-backed log helpers
+from econ_data.store import DB_PATH, get_export_log, get_last_dates
 
 # Maps user-facing data type names to DB/export details
 DATA_TYPES = {

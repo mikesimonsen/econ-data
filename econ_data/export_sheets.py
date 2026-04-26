@@ -13,7 +13,7 @@ from pathlib import Path
 
 from econ_data.config import load as load_config, percent_series
 from econ_data.db import connect
-from econ_data.store_sqlite import DB_PATH  # signature compat for unmigrated callers
+from econ_data.store import DB_PATH
 
 SHEETS_DIR = Path(__file__).parent.parent / "sheets_data"
 SHEETS_CALC_DIR = Path(__file__).parent.parent / "sheets_data_calcs"

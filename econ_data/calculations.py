@@ -18,7 +18,7 @@ from pathlib import Path
 
 from econ_data.config import load, percent_series
 from econ_data.db import connect
-from econ_data.store_sqlite import DB_PATH  # signature compat for unmigrated callers
+from econ_data.store import DB_PATH
 
 UPSERT_SQL = (
     "INSERT INTO calculated (series_id, calc_type, date, value) "

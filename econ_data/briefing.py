@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from econ_data.db import connect
-from econ_data.store_sqlite import DB_PATH, get_recent_revisions  # signature compat / SQLite-backed log helper
+from econ_data.store import DB_PATH, get_recent_revisions
 from econ_data.summary import generate_summary
 
 # Extra search keywords per group so users can find series by concept,

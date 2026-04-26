@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from econ_data.fetch import Observation
-from econ_data.store_sqlite import save
+from econ_data.store import save
 from econ_data.calculations import compute_all
 
 # Column index → (series_id, name)
