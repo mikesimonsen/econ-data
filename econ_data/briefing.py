@@ -109,6 +109,29 @@ def _nice_y_axis(vmin: float, vmax: float, *, include_zero: bool = False,
     return float(nice_min), float(nice_max), ticks
 
 
+def _median_gap_days(points: list) -> int:
+    """Median gap between consecutive observations (in days). Used to size
+    the tooltip 'same period' tolerance so a weekly series shows ~3-4d
+    matches and a monthly series shows ~15d matches."""
+    if not points or len(points) < 2:
+        return 30
+    dates = []
+    for d, _ in points:
+        try:
+            dates.append(date.fromisoformat(d) if isinstance(d, str) else d)
+        except (ValueError, TypeError):
+            continue
+    if len(dates) < 2:
+        return 30
+    dates.sort()
+    gaps = [(dates[i + 1] - dates[i]).days for i in range(len(dates) - 1)]
+    gaps = [g for g in gaps if g > 0]
+    if not gaps:
+        return 30
+    gaps.sort()
+    return gaps[len(gaps) // 2]
+
+
 def _format_tick(v: float, *, is_yoy: bool) -> str:
     if is_yoy:
         return f"{v:+.1f}%" if v != 0 else "0%"
@@ -995,8 +1018,13 @@ def _chart_data(series_id: str, chart_type: str, n: int,
 
 
 def _hero_chart_svg(points: list, title: str, is_yoy: bool = False,
-                    width: int = 800, height: int = 280) -> str:
-    """Render a full chart SVG with axes, gridlines, labels, and zero line."""
+                    width: int = 800, height: int = 280,
+                    chart_id: str = "") -> str:
+    """Render a full chart SVG with axes, gridlines, labels, and zero line.
+
+    When ``chart_id`` is provided, an invisible overlay rect is added that
+    drives the same crosshair + floating tooltip used by multi-series
+    charts (handled by the chartHover() JS in the page)."""
     if len(points) < 2:
         return ""
 
@@ -1082,29 +1110,6 @@ def _hero_chart_svg(points: list, title: str, is_yoy: bool = False,
         f'stroke-width="2" stroke-linejoin="round"/>'
     )
 
-    # Hover circles with tooltips
-    for i, (d, v) in enumerate(points):
-        xp = x_pos(i)
-        yp = y_pos(v)
-        try:
-            dt = datetime.strptime(d, "%Y-%m-%d")
-            dlabel = dt.strftime("%b %Y")
-        except (ValueError, TypeError):
-            dlabel = d
-        if is_yoy:
-            vlabel = f"{v:+.1f}%"
-        elif abs(v) >= 1000:
-            vlabel = f"{v:,.0f}"
-        elif abs(v) >= 10:
-            vlabel = f"{v:.1f}"
-        else:
-            vlabel = f"{v:.2f}"
-        parts.append(
-            f'<circle cx="{xp:.1f}" cy="{yp:.1f}" r="6" '
-            f'fill="transparent" stroke="none" class="spark-hover">'
-            f'<title>{dlabel}: {vlabel}</title></circle>'
-        )
-
     # Visible dot on last point
     lx = x_pos(len(points) - 1)
     ly = y_pos(values[-1])
@@ -1112,7 +1117,79 @@ def _hero_chart_svg(points: list, title: str, is_yoy: bool = False,
         f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="4" fill="{color}"/>'
     )
 
+    # Crosshair + floating tooltip infrastructure (driven by chartHover() JS).
+    # Falls back to native <title> tooltips when no chart_id is supplied.
+    if chart_id:
+        parts.append(
+            f'<line class="xhair xhair-{chart_id}" x1="0" y1="{top_margin}" '
+            f'x2="0" y2="{top_margin + plot_h}" stroke="#8b949e" '
+            f'stroke-width="1" stroke-dasharray="3,3" '
+            f'style="display:none;pointer-events:none"/>'
+        )
+        parts.append(
+            f'<g class="xhair-dots xhair-dots-{chart_id}" '
+            f'style="display:none;pointer-events:none"></g>'
+        )
+        parts.append(
+            f'<rect class="chart-overlay" x="{left_margin}" y="{top_margin}" '
+            f'width="{plot_w}" height="{plot_h}" fill="transparent" '
+            f'data-chart-id="{chart_id}" '
+            f'onmousemove="chartHover(event, \'{chart_id}\')" '
+            f'onmouseleave="chartHoverLeave(\'{chart_id}\')"/>'
+        )
+    else:
+        # Per-point native tooltips for charts without a chart_id
+        for i, (d, v) in enumerate(points):
+            xp = x_pos(i)
+            yp = y_pos(v)
+            try:
+                dt = datetime.strptime(d, "%Y-%m-%d")
+                dlabel = dt.strftime("%b %Y")
+            except (ValueError, TypeError):
+                dlabel = d
+            if is_yoy:
+                vlabel = f"{v:+.1f}%"
+            elif abs(v) >= 1000:
+                vlabel = f"{v:,.0f}"
+            elif abs(v) >= 10:
+                vlabel = f"{v:.1f}"
+            else:
+                vlabel = f"{v:.2f}"
+            parts.append(
+                f'<circle cx="{xp:.1f}" cy="{yp:.1f}" r="6" '
+                f'fill="transparent" stroke="none" class="spark-hover">'
+                f'<title>{dlabel}: {vlabel}</title></circle>'
+            )
+
     parts.append('</svg>')
+
+    if chart_id:
+        all_dates = [d for d, _ in points]
+        gap = _median_gap_days(points)
+        tolerance = max(gap // 2 + 1, 2)
+        payload = {
+            "dates": all_dates,
+            "series": [{
+                "label": title,
+                "color": color,
+                "points": [[d, v] for d, v in points],
+                "tolerance": tolerance,
+            }],
+            "left": left_margin,
+            "top": top_margin,
+            "plotW": plot_w,
+            "plotH": plot_h,
+            "vmin": vmin_p,
+            "vmax": vmax_p,
+            "width": width,
+            "height": height,
+            "isYoy": bool(is_yoy),
+        }
+        parts.append(
+            f'<script>(window._chartData=window._chartData||{{}})'
+            f'["{chart_id}"]={json.dumps(payload)};</script>'
+        )
+
     return "\n".join(parts)
 
 
@@ -1376,17 +1453,21 @@ def _multi_series_chart_svg(
 
     parts.append('</svg>')
 
-    # Embed chart metadata + per-series values for the JS hover handler.
+    # Embed chart metadata + per-series points for the JS hover handler.
+    # Each series carries its own observations + a "tolerance" (days) — the
+    # JS picks the nearest data point per series within that tolerance, so
+    # weekly series whose dates don't line up exactly still both appear in
+    # the tooltip when hovering on the same week.
     if chart_id:
-        # Build per-series value arrays aligned to all_dates (missing = null)
         series_payload = []
         for label, color, pts in all_points:
-            value_map = {d: v for d, v in pts}
-            values_aligned = [value_map.get(d) for d in all_dates]
+            gap = _median_gap_days(pts)
+            tolerance = max(gap // 2 + 1, 2)
             series_payload.append({
                 "label": label,
                 "color": color,
-                "values": values_aligned,
+                "points": [[d, v] for d, v in pts],
+                "tolerance": tolerance,
             })
         payload = {
             "dates": all_dates,
@@ -1644,7 +1725,7 @@ def _render_hero_charts(ctx) -> str:
         chart_id = f"hero-chart-{i}"
         is_yoy = chart_type == "yoy"
         chart_label = "Year-over-Year Change" if is_yoy else a["name"]
-        svg = _hero_chart_svg(points, chart_label, is_yoy)
+        svg = _hero_chart_svg(points, chart_label, is_yoy, chart_id=chart_id)
 
         # Caption
         is_pct = a.get("is_percent", False)
@@ -1665,9 +1746,10 @@ def _render_hero_charts(ctx) -> str:
         chart_csvs[chart_id] = _chart_csv_data(sid, a["name"], points, chart_type)
 
         parts.append(f"""
-        <div class="hero-chart" id="{chart_id}-container">
+        <div class="hero-chart chart-wrap" id="{chart_id}-container">
           <div class="chart-title">{a['name']}{' — YoY %' if is_yoy else ''}</div>
           {svg}
+          <div class="chart-tooltip" id="tip-{chart_id}"></div>
           <div class="chart-caption">{caption}</div>
           <div class="chart-actions">
             <button class="btn-export" onclick="downloadChartCsv('{chart_id}', '{fname_base}')">CSV</button>
@@ -2206,7 +2288,8 @@ main { padding: 24px 32px; max-width: 1400px; }
 }
 .chart-tooltip .tip-row { display: flex; align-items: center; gap: 6px; color: var(--text-muted); }
 .chart-tooltip .tip-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
-.chart-tooltip .tip-val { color: var(--text); font-family: monospace; margin-left: auto; }
+.chart-tooltip .tip-val { color: var(--text); font-family: monospace; margin-left: auto; padding-left: 12px; }
+.chart-tooltip .tip-rdate { color: var(--text-muted); font-style: normal; font-size: 11px; opacity: 0.75; margin-left: 4px; }
 .chart-title {
   font-size: 14px;
   font-weight: 600;
@@ -2649,19 +2732,48 @@ function renderFlagged() {
 // Render on page load
 document.addEventListener('DOMContentLoaded', renderFlagged);
 
-// ── Multi-series chart crosshair hover ────────────────────────────────
+// ── Chart crosshair hover (single- and multi-series) ─────────────────
+// Parse a YYYY-MM-DD ISO date as a *local* date so toLocaleDateString
+// doesn't shift by a day in negative-offset timezones.
+function _isoToLocal(s) {
+  var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (!m) return new Date(s);
+  return new Date(+m[1], +m[2] - 1, +m[3]);
+}
+
+function _fmtChartDate(s, opts) {
+  var d = _isoToLocal(s);
+  if (isNaN(d)) return s;
+  return d.toLocaleDateString(undefined, opts || {year:'numeric', month:'short', day:'numeric'});
+}
+
+function _fmtChartVal(v, isYoy) {
+  if (isYoy) return (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+  if (Math.abs(v) >= 1000) return v.toLocaleString(undefined, {maximumFractionDigits: 0});
+  if (Math.abs(v) >= 10) return v.toFixed(1);
+  return v.toFixed(2);
+}
+
 function chartHover(evt, id) {
   var cd = (window._chartData || {})[id];
   if (!cd) return;
+
+  // Cache a date->index map for positioning per-series dots.
+  if (!cd._dateMap) {
+    cd._dateMap = {};
+    for (var i = 0; i < cd.dates.length; i++) cd._dateMap[cd.dates[i]] = i;
+  }
+
   var overlay = evt.currentTarget;
   var svg = overlay.ownerSVGElement;
   var orect = overlay.getBoundingClientRect();
-  var frac = (evt.clientX - orect.left) / orect.width;
+  var frac = Math.max(0, Math.min(1, (evt.clientX - orect.left) / orect.width));
   var n = cd.dates.length;
   var idx = Math.max(0, Math.min(n - 1, Math.round(frac * (n - 1))));
-  var xSvg = cd.left + cd.plotW * idx / (n - 1);
+  var hoverDate = cd.dates[idx];
+  var hoverMs = _isoToLocal(hoverDate).getTime();
+  var xSvg = cd.left + cd.plotW * (n > 1 ? idx / (n - 1) : 0);
 
-  // Move crosshair line
   var xhair = svg.querySelector('.xhair-' + id);
   if (xhair) {
     xhair.setAttribute('x1', xSvg);
@@ -2669,56 +2781,68 @@ function chartHover(evt, id) {
     xhair.style.display = 'block';
   }
 
-  // Render per-series dots + tooltip rows
-  var dotsG = svg.querySelector('.xhair-dots-' + id);
+  // For each series, find the observation closest to the hover date,
+  // within that series' tolerance window (median gap / 2). This handles
+  // weekly series whose dates don't align (Altos Friday vs Realtor Sunday)
+  // and mixed weekly/monthly charts.
+  var vrange = (cd.vmax - cd.vmin) || 1;
+  var hits = [];
+  var anyDifferent = false;
+  cd.series.forEach(function(s) {
+    var pts = s.points;
+    if (!pts || !pts.length) return;
+    var bestI = -1, bestDiff = Infinity;
+    for (var i = 0; i < pts.length; i++) {
+      var diff = Math.abs(_isoToLocal(pts[i][0]).getTime() - hoverMs);
+      if (diff < bestDiff) { bestDiff = diff; bestI = i; }
+    }
+    if (bestI === -1) return;
+    var v = pts[bestI][1];
+    if (v === null || v === undefined) return;
+    var maxMs = (s.tolerance || 30) * 86400000;
+    if (bestDiff > maxMs) return;
+    var actualDate = pts[bestI][0];
+    if (actualDate !== hoverDate) anyDifferent = true;
+    var actualIdx = cd._dateMap[actualDate];
+    var xActual = (actualIdx === undefined)
+      ? xSvg
+      : cd.left + cd.plotW * (n > 1 ? actualIdx / (n - 1) : 0);
+    var yActual = cd.top + cd.plotH * (1 - (v - cd.vmin) / vrange);
+    hits.push({s: s, v: v, actualDate: actualDate, x: xActual, y: yActual});
+  });
+
   var dotsHtml = '';
   var rowsHtml = '';
-  var vrange = (cd.vmax - cd.vmin) || 1;
-  cd.series.forEach(function(s) {
-    var v = s.values[idx];
-    if (v === null || v === undefined) return;
-    var y = cd.top + cd.plotH * (1 - (v - cd.vmin) / vrange);
-    dotsHtml += '<circle cx="' + xSvg + '" cy="' + y + '" r="4" fill="' + s.color +
+  hits.forEach(function(h) {
+    dotsHtml += '<circle cx="' + h.x + '" cy="' + h.y + '" r="4" fill="' + h.s.color +
                 '" stroke="#0d1117" stroke-width="1.5"/>';
-    var vLabel;
-    if (cd.isYoy) {
-      vLabel = (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
-    } else if (Math.abs(v) >= 1000) {
-      vLabel = v.toLocaleString(undefined, {maximumFractionDigits: 0});
-    } else if (Math.abs(v) >= 10) {
-      vLabel = v.toFixed(1);
-    } else {
-      vLabel = v.toFixed(2);
+    var dateSuffix = '';
+    if (anyDifferent) {
+      dateSuffix = ' <em class="tip-rdate">' +
+        _fmtChartDate(h.actualDate, {month:'short', day:'numeric'}) + '</em>';
     }
     rowsHtml += '<div class="tip-row">' +
-                '<span class="tip-dot" style="background:' + s.color + '"></span>' +
-                '<span>' + s.label + '</span>' +
-                '<span class="tip-val">' + vLabel + '</span></div>';
+                '<span class="tip-dot" style="background:' + h.s.color + '"></span>' +
+                '<span>' + h.s.label + dateSuffix + '</span>' +
+                '<span class="tip-val">' + _fmtChartVal(h.v, cd.isYoy) + '</span></div>';
   });
+
+  var dotsG = svg.querySelector('.xhair-dots-' + id);
   if (dotsG) {
     dotsG.innerHTML = dotsHtml;
     dotsG.style.display = 'block';
   }
 
-  // Position tooltip inside the wrapping .chart-wrap
   var tip = document.getElementById('tip-' + id);
   if (tip) {
-    var dateStr = cd.dates[idx];
-    try {
-      var dt = new Date(dateStr);
-      if (!isNaN(dt)) {
-        dateStr = dt.toLocaleDateString(undefined, {year:'numeric', month:'short', day:'numeric'});
-      }
-    } catch(e) {}
-    tip.innerHTML = '<div class="tip-date">' + dateStr + '</div>' + rowsHtml;
+    if (rowsHtml === '') { tip.style.display = 'none'; return; }
+    tip.innerHTML = '<div class="tip-date">' + _fmtChartDate(hoverDate) + '</div>' + rowsHtml;
     tip.style.display = 'block';
-    // Convert SVG x into wrapper-relative pixel x
     var wrap = tip.parentElement;
     var wrapRect = wrap.getBoundingClientRect();
     var svgRect = svg.getBoundingClientRect();
     var px = svgRect.left + (xSvg / cd.width) * svgRect.width - wrapRect.left;
     var tipW = tip.offsetWidth;
-    // Flip side if tooltip would overflow wrapper
     if (px + tipW + 16 > wrapRect.width) {
       tip.style.left = (px - tipW - 12) + 'px';
     } else {
