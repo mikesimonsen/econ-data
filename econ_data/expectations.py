@@ -213,14 +213,24 @@ def get_calendar_releases(days_ahead: int = 7,
             "series_ids": series_ids.split(","),
         })
 
-    # Add weekly claims Thursdays
+    # Add fixed-rule releases that don't need calendar entries:
+    #  - ICSA: every Thursday
+    #  - Case-Shiller HPI: last Tuesday of each month
     d = today
-    while d <= date.fromisoformat(cutoff):
+    cutoff_date = date.fromisoformat(cutoff)
+    while d <= cutoff_date:
         if d.weekday() == 3:  # Thursday
             results.append({
                 "release_date": d.isoformat(),
                 "report": "Weekly Jobless Claims",
                 "series_ids": ["ICSA"],
+            })
+        if d.weekday() == 1 and (d + timedelta(days=7)).month != d.month:
+            # Last Tuesday of month
+            results.append({
+                "release_date": d.isoformat(),
+                "report": "Case-Shiller Home Price Index",
+                "series_ids": ["CSUSHPISA"],
             })
         d += timedelta(days=1)
 
