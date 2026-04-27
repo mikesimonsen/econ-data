@@ -288,24 +288,46 @@ if __name__ == "__main__":
         log(f"Exported {len(paths)} value CSVs + {len(calc_paths)} calc CSVs ({len(changed_groups)} groups changed)")
 
     # Always push docs/ (briefing) + sheets if changed
+    repo_dir = Path(__file__).parent
     try:
         subprocess.run(
             ["git", "add", "sheets_data/", "sheets_data_calcs/", "docs/"],
-            cwd=Path(__file__).parent, check=True, capture_output=True,
+            cwd=repo_dir, check=True, capture_output=True,
         )
         subprocess.run(
             ["git", "commit", "-m", f"data: update sheets export {today}"],
-            cwd=Path(__file__).parent, check=True, capture_output=True,
+            cwd=repo_dir, check=True, capture_output=True,
         )
-        subprocess.run(
-            ["git", "push"],
-            cwd=Path(__file__).parent, check=True, capture_output=True,
-        )
-        log("Pushed to GitHub.")
+
+        # Push with rebase-on-conflict retry. If someone (e.g. a developer
+        # commit) pushes to main during the ~10 min cron window, the first
+        # push gets rejected; rebase onto the new main and retry.
+        for attempt in range(1, 4):
+            push = subprocess.run(
+                ["git", "push"], cwd=repo_dir, capture_output=True,
+            )
+            if push.returncode == 0:
+                log("Pushed to GitHub.")
+                break
+            stderr = push.stderr.decode() if push.stderr else ""
+            if "rejected" in stderr or "fetch first" in stderr:
+                log(f"Push rejected (attempt {attempt}/3); rebasing onto origin/main...")
+                rebase = subprocess.run(
+                    ["git", "pull", "--rebase", "origin", "main"],
+                    cwd=repo_dir, capture_output=True,
+                )
+                if rebase.returncode != 0:
+                    log(f"Rebase failed: {rebase.stderr.decode().strip()}")
+                    break
+            else:
+                log(f"Push failed with non-rejection error: {stderr.strip()}")
+                break
+        else:
+            log("Push still failing after 3 rebase attempts; giving up.")
     except subprocess.CalledProcessError as e:
         # No changes to commit is fine (exit code 1 from git commit)
         if "nothing to commit" not in (e.stdout or b"").decode():
-            log(f"Git push failed: {e.stderr.decode().strip() if e.stderr else e}")
+            log(f"Git commit failed: {e.stderr.decode().strip() if e.stderr else e}")
     except FileNotFoundError:
         log("Git not available — skipping push.")
 
