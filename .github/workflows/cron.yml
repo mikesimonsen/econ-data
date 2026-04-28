@@ -1,0 +1,35 @@
+name: Daily pipeline (7 AM ET)
+
+# Triggers the existing Fly machine in econ-data-cron at 7 AM Eastern.
+# Two schedules cover both DST states; the runtime guard skips the wrong one.
+# GitHub Actions cron can be delayed several minutes under load — that's normal.
+
+on:
+  schedule:
+    - cron: '0 11 * * *'  # 7 AM EDT (DST)
+    - cron: '0 12 * * *'  # 7 AM EST (standard)
+  workflow_dispatch:       # manual trigger from the Actions tab
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Skip if not 7 AM ET
+        if: github.event_name == 'schedule'
+        run: |
+          HOUR=$(TZ=America/New_York date +%H)
+          if [ "$HOUR" != "07" ]; then
+            echo "Current ET hour is ${HOUR}, not 7. Skipping (DST guard)."
+            exit 78  # neutral skip
+          fi
+
+      - name: Start Fly machine
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          MACHINE_ID=$(flyctl machine list -a econ-data-cron --json \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
+          echo "Starting machine $MACHINE_ID"
+          flyctl machine start "$MACHINE_ID" -a econ-data-cron
