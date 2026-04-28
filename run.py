@@ -29,7 +29,7 @@ from econ_data.summary import generate_summary, format_summary, format_signals_b
 
 def log(msg=""):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{ts}] {msg}")
+    print(f"[{ts}] {msg}", flush=True)
 
 
 def format_revisions(revisions: list) -> str:
@@ -62,6 +62,7 @@ if __name__ == "__main__":
     last_checked = get_fetch_log()
 
     # Fetch NAR Existing Home Sales first (primary source, faster than FRED)
+    log("Fetching NAR existing home sales...")
     nar_result = fetch_nar(last_dates=last_dates)
     if nar_result["new"]:
         save(nar_result["new"])
@@ -71,6 +72,7 @@ if __name__ == "__main__":
     # Fetch FRED series (smart scheduling: only hits API when due)
     # NAR series already captured above will be skipped via cooldown
     fred = fred_series(cfg)
+    log(f"Fetching FRED ({len(fred)} series, only those due)...")
     result = fetch_all(fred, last_dates=last_dates, last_checked=last_checked)
 
     # Merge NAR counts into result (NAR-sourced series show in summary)
@@ -98,6 +100,7 @@ if __name__ == "__main__":
         save(all_fetched)
 
     # Fetch Mortgage News Daily
+    log("Fetching MND mortgage rates...")
     mnd_result = fetch_mnd(last_dates=last_dates)
     result["new"].extend(mnd_result["new"])
     result["counts"].update(mnd_result["counts"])
@@ -108,6 +111,7 @@ if __name__ == "__main__":
     # Fetch BLS series (metro CPI not available in FRED)
     bls_map = build_series_map(cfg)
     if bls_map:
+        log(f"Fetching BLS metro CPI ({len(bls_map)} series)...")
         bls_result = fetch_bls(bls_map, last_dates=last_dates)
         result["new"].extend(bls_result["new"])
         result["counts"].update(bls_result["counts"])
@@ -115,6 +119,7 @@ if __name__ == "__main__":
             save(bls_result["new"])
 
     # Fetch Altos Research weekly inventory (drop-folder CSV)
+    log("Fetching Altos weekly inventory...")
     altos_result = fetch_altos(last_dates=last_dates)
     result["new"].extend(altos_result["new"])
     result["counts"].update(altos_result["counts"])
@@ -122,6 +127,7 @@ if __name__ == "__main__":
         save(altos_result["new"])
 
     # Fetch Xactus Mortgage Intent Index (drop-folder spreadsheets)
+    log("Fetching Xactus MII...")
     xactus_result = fetch_xactus(last_dates=last_dates)
     result["new"].extend(xactus_result["new"])
     result["counts"].update(xactus_result["counts"])
@@ -129,6 +135,7 @@ if __name__ == "__main__":
         save(xactus_result["new"])
 
     # Fetch web-scraped series (MBA Purchase Index, etc.)
+    log("Fetching web-scraped series (MBA, etc.)...")
     web_result = fetch_web(last_dates=last_dates)
     result["new"].extend(web_result["new"])
     result["counts"].update(web_result["counts"])
@@ -136,6 +143,7 @@ if __name__ == "__main__":
         save(web_result["new"])
 
     # Fetch Conference Board Consumer Confidence (scraped from MacroMicro.me)
+    log("Fetching Conference Board confidence...")
     cb_result = fetch_confboard(last_dates=last_dates)
     result["new"].extend(cb_result["new"])
     result["counts"].update(cb_result["counts"])
@@ -143,6 +151,7 @@ if __name__ == "__main__":
         save(cb_result["new"])
 
     # Fetch Realtor.com bonus metrics (S3 CSV)
+    log("Fetching Realtor.com bonus metrics...")
     realtor_result = fetch_realtor(last_dates=last_dates)
     result["new"].extend(realtor_result["new"])
     result["counts"].update(realtor_result["counts"])
@@ -150,6 +159,7 @@ if __name__ == "__main__":
         save(realtor_result["new"])
 
     # Fetch Redfin housing market data (S3 TSV)
+    log("Fetching Redfin housing data...")
     redfin_result = fetch_redfin(last_dates=last_dates)
     result["new"].extend(redfin_result["new"])
     result["counts"].update(redfin_result["counts"])
@@ -157,6 +167,7 @@ if __name__ == "__main__":
         save(redfin_result["new"])
 
     # Compute mortgage rate spread (derived from MND + DGS10)
+    log("Computing mortgage rate spread...")
     spread_result = compute_spread(last_dates=get_last_dates())
     result["new"].extend(spread_result["new"])
     result["counts"].update(spread_result["counts"])
@@ -164,6 +175,7 @@ if __name__ == "__main__":
         save(spread_result["new"])
 
     # Compute rolling averages (MBA, Xactus)
+    log("Computing rolling averages...")
     rolling_result = compute_rolling(last_dates=get_last_dates())
     result["new"].extend(rolling_result["new"])
     result["counts"].update(rolling_result["counts"])
@@ -199,6 +211,7 @@ if __name__ == "__main__":
 
     save_groups(cfg)
 
+    log("Computing period % and YoY % for all series...")
     calc_rows = compute_all()
     log(f"Computed {calc_rows} calculated values (period %, YoY %).")
 
