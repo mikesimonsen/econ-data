@@ -1,8 +1,10 @@
 name: Daily pipeline (7 AM ET)
 
 # Triggers the existing Fly machine in econ-data-cron at 7 AM Eastern.
-# Two schedules cover both DST states; the runtime guard skips the wrong one.
-# GitHub Actions cron can be delayed several minutes under load — that's normal.
+# Two schedules cover both DST states; the runtime guard picks the matching one.
+# Match by (scheduled cron expression × current DST), not by current hour —
+# GitHub Actions cron is regularly delayed 30–90 minutes, which would push the
+# current ET hour past 07 and cause a false skip.
 
 on:
   schedule:
@@ -16,16 +18,25 @@ jobs:
     steps:
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - name: Skip if not 7 AM ET
+      - name: Check DST schedule match
+        id: dst
         if: github.event_name == 'schedule'
         run: |
-          HOUR=$(TZ=America/New_York date +%H)
-          if [ "$HOUR" != "07" ]; then
-            echo "Current ET hour is ${HOUR}, not 7. Skipping (DST guard)."
-            exit 78  # neutral skip
+          TZ_NAME=$(TZ=America/New_York date +%Z)
+          SCHEDULE='${{ github.event.schedule }}'
+          SHOULD_RUN=true
+          if [ "$SCHEDULE" = "0 11 * * *" ] && [ "$TZ_NAME" != "EDT" ]; then
+            echo "EDT-scheduled trigger fired but ET is currently ${TZ_NAME}. Skipping."
+            SHOULD_RUN=false
           fi
+          if [ "$SCHEDULE" = "0 12 * * *" ] && [ "$TZ_NAME" != "EST" ]; then
+            echo "EST-scheduled trigger fired but ET is currently ${TZ_NAME}. Skipping."
+            SHOULD_RUN=false
+          fi
+          echo "should_run=${SHOULD_RUN}" >> "$GITHUB_OUTPUT"
 
       - name: Start Fly machine
+        if: github.event_name == 'workflow_dispatch' || steps.dst.outputs.should_run == 'true'
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
