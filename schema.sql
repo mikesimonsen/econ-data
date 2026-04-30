@@ -46,6 +46,15 @@ CREATE TABLE IF NOT EXISTS fetch_log (
     last_checked DATE NOT NULL
 );
 
+-- Tracks FRED series that failed in the most recent fetch attempt.
+-- Morning run inserts on error / deletes on success; intraday run reads
+-- this table to decide which series to retry.
+CREATE TABLE IF NOT EXISTS fetch_errors (
+    series_id  TEXT        PRIMARY KEY,
+    errored_at TIMESTAMPTZ NOT NULL,
+    error      TEXT
+);
+
 CREATE TABLE IF NOT EXISTS revisions (
     series_id   TEXT             NOT NULL,
     date        DATE             NOT NULL,

@@ -221,6 +221,38 @@ def save_fetch_log(series_ids: list, db_path: Path = DB_PATH) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Fetch errors (FRED retry queue for the intraday run)
+# ─────────────────────────────────────────────────────────────────────────
+
+def record_fetch_error(series_id: str, error: str,
+                       db_path: Path = DB_PATH) -> None:
+    """Mark a series as having failed its most recent fetch."""
+    connect().execute(
+        "INSERT INTO fetch_errors (series_id, errored_at, error) "
+        "VALUES (%s, %s, %s) "
+        "ON CONFLICT (series_id) DO UPDATE SET "
+        "errored_at = EXCLUDED.errored_at, error = EXCLUDED.error",
+        (series_id, datetime.now(), error[:500] if error else None),
+    )
+
+
+def clear_fetch_error(series_id: str, db_path: Path = DB_PATH) -> None:
+    """Clear a series from the retry queue after a successful fetch."""
+    connect().execute(
+        "DELETE FROM fetch_errors WHERE series_id = %s",
+        (series_id,),
+    )
+
+
+def get_failed_series(db_path: Path = DB_PATH) -> set:
+    """Return set of series_ids currently in the retry queue."""
+    rows = connect().execute(
+        "SELECT series_id FROM fetch_errors"
+    ).fetchall()
+    return {r[0] for r in rows}
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Groups
 # ─────────────────────────────────────────────────────────────────────────
 

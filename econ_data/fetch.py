@@ -115,7 +115,7 @@ def fetch_series_with_revisions(series_id: str, name: str,
 
 
 def fetch_all(series: list, last_dates: dict = None,
-              last_checked: dict = None) -> dict:
+              last_checked: dict = None, force: bool = False) -> dict:
     """
     Fetch updates for all (series_id, name) pairs.
 
@@ -126,13 +126,22 @@ def fetch_all(series: list, last_dates: dict = None,
 
     last_dates: {series_id: date} of the most recent observation in the DB.
     last_checked: {series_id: date} of when each series was last checked.
+    force: if True, bypass _should_fetch (cooldown + already-checked-today).
+        Used by the intraday retry path so a series that errored this morning
+        gets re-tried even though fetch_log already records it as checked.
     Returns {"new": [Observation, ...], "counts": {series_id: int},
              "checked": [series_id, ...], "all_fetched": [Observation, ...]}
     counts:  >0 = new observations,  0 = no new data or skipped,  -1 = error
     checked: series that were actually queried (for updating fetch_log)
     all_fetched: all observations returned (including revision window), for
         revision detection before save
+
+    Also maintains the fetch_errors table: records a row on exception, deletes
+    it on success. The intraday run reads that table to decide what to retry.
     """
+    # Local import to avoid a circular import at module load time.
+    from econ_data.store import clear_fetch_error, record_fetch_error
+
     if last_dates is None:
         last_dates = {}
     if last_checked is None:
@@ -148,7 +157,7 @@ def fetch_all(series: list, last_dates: dict = None,
         last_obs = last_dates.get(series_id)
         lc = last_checked.get(series_id)
 
-        if not _should_fetch(series_id, last_obs, lc):
+        if not force and not _should_fetch(series_id, last_obs, lc):
             counts[series_id] = 0
             continue
 
@@ -175,11 +184,17 @@ def fetch_all(series: list, last_dates: dict = None,
             all_fetched.extend(results)
             checked.append(series_id)
             fetched += 1
+            clear_fetch_error(series_id)
         except Exception as e:
             ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"[{ts}] SKIPPED {series_id} — {e}")
             counts[series_id] = -1
             fetched += 1
+            try:
+                record_fetch_error(series_id, str(e))
+            except Exception as rec_err:
+                # Don't let an error-recording failure mask the original error.
+                print(f"[{ts}] (could not record fetch_error for {series_id}: {rec_err})")
 
     return {"new": all_new, "counts": counts, "checked": checked,
             "all_fetched": all_fetched}
