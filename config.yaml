@@ -171,6 +171,24 @@ groups:
         name: "Median Duration of Unemployment (Weeks)"
         inverted: true
 
+  income:
+    name: "Household & Personal Income"
+    series:
+      - id: MEHOINUSA646N
+        name: "Median Household Income (current $)"
+      - id: MEHOINUSA672N
+        name: "Real Median Household Income (2024 $)"
+      - id: CES0500000003
+        name: "Average Hourly Earnings (Total Private)"
+      - id: A229RX0
+        name: "Real Disposable Personal Income Per Capita"
+
+  affordability:
+    name: "Housing Affordability"
+    series:
+      - id: PRICE_TO_INCOME
+        name: "Median Existing-Home Price / Median Household Income"
+
   wage-growth:
     name: "Atlanta Fed Wage Growth Tracker"
     signals: minimal

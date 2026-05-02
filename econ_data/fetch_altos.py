@@ -240,3 +240,45 @@ def _weighted_avg(rows: list[dict], spec: dict) -> dict[date, float]:
 
     return {d: round(date_num[d] / date_den[d], 2)
             for d in date_num if date_den[d] > 0}
+
+
+if __name__ == "__main__":
+    # Standalone import of the latest weekly Altos drop.
+    # Reads import_files/altos_trends_national_*.csv (newest), upserts
+    # observations, recomputes derived values, refreshes the sheets_data
+    # CSVs + manifest, and re-renders docs/index.html. Skips the LLM
+    # analyses and the git commit/push — those stay manual.
+    from pathlib import Path
+
+    from econ_data.briefing import generate_briefing
+    from econ_data.calculations import compute_all
+    from econ_data.config import load
+    from econ_data.export_sheets import (
+        export_all_groups, export_all_groups_calcs, write_manifest,
+    )
+    from econ_data.store import get_last_dates, get_series_captured_today, save
+
+    result = fetch_altos(last_dates=get_last_dates())
+    saved = save(result["new"])
+    print(f"Altos: {saved} new observations")
+    for sid, n in result["counts"].items():
+        if n:
+            print(f"  {sid:30} +{n}")
+    print(f"Recomputed {compute_all()} derived values")
+
+    cfg = load()
+    updated_ids = get_series_captured_today()
+    paths = export_all_groups(cfg, updated_ids=updated_ids)
+    calc_paths = export_all_groups_calcs(cfg, updated_ids=updated_ids)
+    changed_groups = [
+        gid for gid, gdata in cfg.get("groups", {}).items()
+        if {s["id"] for s in gdata["series"]} & updated_ids
+    ]
+    write_manifest(changed_groups)
+    print(f"Exported {len(paths)} value CSVs + {len(calc_paths)} calc CSVs "
+          f"({len(changed_groups)} groups changed)")
+
+    Path("docs").mkdir(exist_ok=True)
+    Path("docs/index.html").write_text(
+        generate_briefing(cfg, updated_ids=updated_ids))
+    print("Re-rendered docs/index.html")

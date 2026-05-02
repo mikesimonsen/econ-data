@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from econ_data.briefing import generate_briefing
+from econ_data.calc_affordability import compute_affordability
 from econ_data.calc_rolling import compute_rolling
 from econ_data.calc_spread import compute_spread
 from econ_data.calculations import compute_all
@@ -178,6 +179,12 @@ def fetch_morning(cfg: dict, last_dates: dict, last_checked: dict) -> tuple[dict
     if spread["new"]:
         save(spread["new"])
     _merge(result, spread)
+
+    log("Computing housing affordability ratio...")
+    afford = compute_affordability(last_dates=get_last_dates())
+    if afford["new"]:
+        save(afford["new"])
+    _merge(result, afford)
 
     log("Computing rolling averages...")
     rolling = compute_rolling(last_dates=get_last_dates())
