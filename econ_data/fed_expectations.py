@@ -232,54 +232,90 @@ def fetch_fedwatch_probabilities(meeting_date: date) -> dict[int, float] | None:
         print(f"  FedWatch fetch failed for {meeting_date}: {e}")
         return None
 
-    import re
-    # Concatenate all text blocks (the LLM may split across many small blocks
-    # when interleaving with citations)
     full_text = "\n".join(b.text for b in msg.content if hasattr(b, "text"))
 
-    candidates = []
-    # Find all code-block contents (greedy up to closing ```)
-    for m in re.finditer(r"```(?:json)?\s*(.*?)\s*```", full_text, re.DOTALL):
-        block_text = m.group(1).strip()
-        if "probabilities" in block_text:
-            candidates.append(block_text)
-    # Also try to find a top-level JSON object containing "probabilities"
-    # by scanning for balanced braces
-    for start_match in re.finditer(r'\{\s*"probabilities"', full_text):
-        start = start_match.start()
+    parsed = _normalize_probs(full_text)
+    if parsed:
+        return parsed
+
+    # Web-search responses often come back as prose + markdown tables
+    # rather than JSON. Fall back to a no-tools extraction pass that
+    # converts the prose to the strict JSON shape we need.
+    return _extract_probs_from_text(client, full_text)
+
+
+def _normalize_probs(text: str) -> dict[int, float] | None:
+    """Parse JSON (or JSON embedded in markdown / prose) and return
+    {bps: prob} if valid, else None."""
+    import re
+    candidates = [text]
+    for m in re.finditer(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL):
+        candidates.append(m.group(1).strip())
+    for sm in re.finditer(r'\{\s*"probabilities"', text):
         depth = 0
-        end = start
-        for i in range(start, len(full_text)):
-            if full_text[i] == "{":
+        for i in range(sm.start(), len(text)):
+            if text[i] == "{":
                 depth += 1
-            elif full_text[i] == "}":
+            elif text[i] == "}":
                 depth -= 1
                 if depth == 0:
-                    end = i + 1
+                    candidates.append(text[sm.start():i + 1])
                     break
-        if end > start:
-            candidates.append(full_text[start:end])
 
-    for text_to_parse in candidates:
+    result = None
+    for cand in candidates:
         try:
-            result = json.loads(text_to_parse)
-            probs = result.get("probabilities")
-            if not probs:
-                continue
-            normalized = {}
-            for k, v in probs.items():
-                key = int(str(k).lstrip("+"))
-                if v > 0:
-                    normalized[key] = float(v)
-            if not normalized:
-                continue
-            total = sum(normalized.values())
-            if 0.9 <= total <= 1.1:
-                return normalized
+            result = json.loads(cand)
+            break
         except (json.JSONDecodeError, ValueError, TypeError):
             continue
-
+    if result is None:
+        return None
+    probs = result.get("probabilities") if isinstance(result, dict) else None
+    if not probs:
+        return None
+    normalized = {}
+    for k, v in probs.items():
+        try:
+            key = int(str(k).lstrip("+"))
+        except ValueError:
+            continue
+        if v and v > 0:
+            normalized[key] = float(v)
+    if not normalized:
+        return None
+    total = sum(normalized.values())
+    if 0.9 <= total <= 1.1:
+        return normalized
     return None
+
+
+def _extract_probs_from_text(client: "anthropic.Anthropic",
+                             prose: str) -> dict[int, float] | None:
+    """Second-pass extractor: convert prose/table output to strict JSON."""
+    if not prose.strip():
+        return None
+    try:
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            system=(
+                "Extract CME FedWatch probabilities from the user's text. "
+                "Output exactly one JSON object and nothing else. No prose, "
+                "no markdown, no code fences. Begin your response with { "
+                "and end with }. Format:\n"
+                '{"probabilities": {"-25": 0.28, "0": 0.70, "+25": 0.02}}\n'
+                "Keys are basis-point rate changes (-50,-25,0,+25,+50); "
+                "values are decimal probabilities (0..1). Only include "
+                "outcomes with probability > 0."
+            ),
+            messages=[{"role": "user", "content": prose}],
+        )
+    except Exception as e:
+        print(f"  Extraction pass failed: {e}")
+        return None
+    text = "\n".join(b.text for b in msg.content if hasattr(b, "text")).strip()
+    return _normalize_probs(text)
 
 
 def render_fed_chart(db_path: Path = DB_PATH,
