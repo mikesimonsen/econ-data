@@ -14,9 +14,40 @@ import math
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from econ_data.config import fred_series
 from econ_data.db import connect
 from econ_data.store import DB_PATH, get_recent_revisions
 from econ_data.summary import generate_summary
+
+
+def _build_source_urls(cfg: dict) -> dict[str, str]:
+    """Map {series_id: external source URL}.
+
+    FRED series → fred.stlouisfed.org. Series with a `bls_id` override →
+    data.bls.gov (preferred over FRED when both apply). Computed/scraped
+    series (Altos, MND, Xactus, etc.) get no entry.
+    """
+    urls = {sid: f"https://fred.stlouisfed.org/series/{sid}"
+            for sid, _ in fred_series(cfg)}
+    for s in cfg.get("series", []):
+        if s.get("bls_id"):
+            urls[s["id"]] = f"https://data.bls.gov/timeseries/{s['bls_id']}"
+    for group in cfg.get("groups", {}).values():
+        for s in group["series"]:
+            if s.get("bls_id"):
+                urls[s["id"]] = f"https://data.bls.gov/timeseries/{s['bls_id']}"
+    return urls
+
+
+def _sid_html(sid: str, source_urls: dict) -> str:
+    """Render a series ID as a clickable link if its source page is known,
+    otherwise as plain text. The link stops click propagation so it doesn't
+    also toggle the row's detail panel."""
+    url = source_urls.get(sid)
+    if not url:
+        return sid
+    return (f'<a href="{url}" target="_blank" rel="noopener" '
+            f'class="sid-link" onclick="event.stopPropagation()">{sid}</a>')
 
 # Extra search keywords per group so users can find series by concept,
 # not just by name.  Keys = group_id, values = space-separated terms.
@@ -558,6 +589,8 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
     from econ_data.fed_expectations import render_fed_chart
     fed_chart_html = render_fed_chart(db_path=db_path)
 
+    source_urls = _build_source_urls(cfg)
+
     # Build revision lookup by series_id
     revisions_by_series = {}
     for r in revisions:
@@ -603,6 +636,7 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
         updated_ids=updated_ids or set(),
         cfg=cfg,
         db_path=db_path,
+        source_urls=source_urls,
     )
     return html
 
@@ -788,6 +822,7 @@ def _render_series_table(series_list, ctx, show_signals=True) -> str:
     updated_ids = ctx["updated_ids"]
     release_dates = ctx.get("release_dates", {})
     revisions_by_series = ctx.get("revisions_by_series", {})
+    source_urls = ctx.get("source_urls", {})
 
     # Group by group_id
     by_group = {}
@@ -831,7 +866,7 @@ def _render_series_table(series_list, ctx, show_signals=True) -> str:
             <tr class="series-row {fresh}{has_rev}" id="row-{sid}" data-search="{search}" data-sid="{sid}" onclick="toggleDetail('{sid}')">
               <td class="name-col">
                 <div class="series-name">{a['name']}</div>
-                <div class="series-id">{sid}</div>
+                <div class="series-id">{_sid_html(sid, source_urls)}</div>
               </td>
               <td class="spark-col">{spark}</td>
               <td class="date-col">{date_str}</td>
@@ -1760,6 +1795,7 @@ def _render_upcoming(ctx) -> str:
     """Render the Upcoming tab — releases expected in the next 7 days."""
     from datetime import datetime
     upcoming = ctx.get("upcoming_releases", [])
+    source_urls = ctx.get("source_urls", {})
     if not upcoming:
         return "<p class='muted'>No tracked releases expected in the next 7 days.</p>"
 
@@ -1814,7 +1850,7 @@ def _render_upcoming(ctx) -> str:
               <tr>
                 <td class="name-col">
                   <div class="series-name">{rel['name']}</div>
-                  <div class="series-id">{rel['series_id']} · {rel['period']}</div>
+                  <div class="series-id">{_sid_html(rel['series_id'], source_urls)} · {rel['period']}</div>
                 </td>
                 <td class="val-col">{prior}</td>
                 <td class="exp-col">{expected_cell}</td>
@@ -1868,6 +1904,7 @@ def _render_all_groups(ctx) -> str:
     sparklines = ctx["sparklines"]
     updated_ids = ctx["updated_ids"]
     release_dates = ctx.get("release_dates", {})
+    source_urls = ctx.get("source_urls", {})
 
     # Sort groups by most recent data (newest first)
     sorted_groups = sorted(
@@ -1906,7 +1943,7 @@ def _render_all_groups(ctx) -> str:
             <tr class="series-row {fresh}" id="row-{sid}" data-search="{search}" data-sid="{sid}" onclick="toggleDetail('{sid}')">
               <td class="name-col">
                 <div class="series-name">{a['name']}</div>
-                <div class="series-id">{sid}</div>
+                <div class="series-id">{_sid_html(sid, source_urls)}</div>
               </td>
               <td class="spark-col">{spark}</td>
               <td class="date-col">{date_str}</td>
@@ -2174,6 +2211,8 @@ main { padding: 24px 32px; max-width: 1400px; }
 .name-col { min-width: 200px; }
 .series-name { font-weight: 500; }
 .series-id { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+.series-id .sid-link { color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor; }
+.series-id .sid-link:hover { color: var(--accent); border-bottom-style: solid; }
 .spark-col { width: 130px; }
 .spark-hover:hover { fill: var(--accent); stroke: var(--accent); stroke-width: 1; r: 3; }
 .date-col { width: 90px; color: var(--text-muted); font-family: monospace; font-size: 12px; }

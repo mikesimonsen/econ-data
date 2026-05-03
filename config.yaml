@@ -185,6 +185,7 @@ groups:
 
   affordability:
     name: "Housing Affordability"
+    source: calculated
     series:
       - id: PRICE_TO_INCOME
         name: "Median Existing-Home Price / Median Household Income"
