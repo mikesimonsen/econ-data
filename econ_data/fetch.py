@@ -32,7 +32,8 @@ class Observation:
 
 def _detect_frequency(series_id: str) -> str:
     """Guess frequency from the series_id."""
-    if series_id.startswith("DGS") or series_id in ("WTI_CRUDE",):
+    if (series_id.startswith("DGS")
+            or series_id in ("WTI_CRUDE", "T5YIE", "T10YIE", "T5YIFR")):
         return "daily"
     if series_id in ("ICSA", "IC4WSA", "CCSA", "CC4WSA", "IURSA"):
         return "weekly"

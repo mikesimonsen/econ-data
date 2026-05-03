@@ -119,6 +119,34 @@ groups:
       - id: PCEPILFE
         name: "Core PCE (Less Food & Energy)"
 
+  inflation-expectations:
+    name: "Inflation Expectations - Market-Based (Treasury Breakevens)"
+    signals: minimal
+    series:
+      - id: T5YIE
+        name: "5-Year Breakeven Inflation Rate"
+        units: percent
+      - id: T10YIE
+        name: "10-Year Breakeven Inflation Rate"
+        units: percent
+      - id: T5YIFR
+        name: "5-Year, 5-Year Forward Inflation Expectation Rate"
+        units: percent
+
+  inflation-expectations-survey:
+    name: "Inflation Expectations - Cleveland Fed Model"
+    signals: minimal
+    series:
+      - id: EXPINF1YR
+        name: "1-Year Expected Inflation"
+        units: percent
+      - id: EXPINF5YR
+        name: "5-Year Expected Inflation"
+        units: percent
+      - id: EXPINF10YR
+        name: "10-Year Expected Inflation"
+        units: percent
+
   ppi:
     name: "Producer Price Index (BLS, SA)"
     signals: minimal

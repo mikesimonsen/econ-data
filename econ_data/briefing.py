@@ -649,6 +649,7 @@ def _render_page(**ctx) -> str:
     analysis_html = ctx.get("analysis_html", "")
     housing_html = ctx.get("housing_html", "")
     housing_charts_html = _render_housing_charts(ctx)
+    inflation_charts_html = _render_inflation_charts(ctx)
     employment_charts_html = _render_employment_charts(ctx)
     fed_chart_html = ctx.get("fed_chart_html", "")
     today_html = _render_today(ctx)
@@ -688,6 +689,7 @@ def _render_page(**ctx) -> str:
 <nav>
   <a href="#today" class="active" onclick="showTab('today', this)">Today</a>
   <a href="#housing" onclick="showTab('housing', this)">Housing</a>
+  <a href="#inflation" onclick="showTab('inflation', this)">Inflation</a>
   <a href="#employment" onclick="showTab('employment', this)">Employment</a>
   <a href="#fed" onclick="showTab('fed', this)">Fed</a>
   <a href="#upcoming" onclick="showTab('upcoming', this)">Upcoming</a>
@@ -708,6 +710,10 @@ def _render_page(**ctx) -> str:
   <section id="housing" class="tab-content">
     {housing_charts_html}
     {f'<div class="analysis-block">{housing_html}</div>' if housing_html else '<p class="muted">Housing analysis not yet generated. Run the pipeline to generate.</p>'}
+  </section>
+
+  <section id="inflation" class="tab-content">
+    {inflation_charts_html if inflation_charts_html else '<p class="muted">Inflation charts unavailable — underlying series not yet populated.</p>'}
   </section>
 
   <section id="employment" class="tab-content">
@@ -1594,6 +1600,120 @@ def _render_housing_charts(ctx: dict) -> str:
         '<h2 style="margin-top:0">Housing Data — Cross-Source Comparison</h2>\n'
         '<p class="muted">Same metrics from different sources overlaid to spot '
         'convergence and divergence. YoY % normalizes different scales.</p>\n'
+        + "\n".join(chart_parts)
+    )
+
+
+# ── Inflation comparison charts ────────────────────────────────────
+
+# Daily breakevens vs monthly CPI/PCE/survey are different cadences;
+# the multi-series chart already handles that via per-series tolerance.
+_INFLATION_COMPARISONS = [
+    {
+        "title": "Headline Inflation: CPI vs PCE — YoY %",
+        "chart_type": "yoy",
+        "series": [
+            ("CPIAUCSL", "CPI (BLS)"),
+            ("PCEPI", "PCE (BEA, Fed's preferred)"),
+        ],
+    },
+    {
+        "title": "Core Inflation: Core CPI vs Core PCE — YoY %",
+        "chart_type": "yoy",
+        "series": [
+            ("CPILFESL", "Core CPI"),
+            ("PCEPILFE", "Core PCE"),
+        ],
+    },
+    {
+        "title": "Market-Implied Inflation Expectations (Treasury Breakevens)",
+        "chart_type": "raw",
+        "series": [
+            ("T5YIE", "5-year breakeven"),
+            ("T10YIE", "10-year breakeven"),
+            ("T5YIFR", "5y5y forward (Fed's anchor)"),
+        ],
+    },
+    {
+        "title": "Survey-Based Inflation Expectations (Cleveland Fed)",
+        "chart_type": "raw",
+        "series": [
+            ("EXPINF1YR", "1-year"),
+            ("EXPINF5YR", "5-year"),
+            ("EXPINF10YR", "10-year"),
+        ],
+    },
+    {
+        "title": "5-Year Horizon: Market vs Survey",
+        "chart_type": "raw",
+        "series": [
+            ("T5YIE", "Market: 5y breakeven"),
+            ("EXPINF5YR", "Survey: 5y expected"),
+        ],
+    },
+    {
+        "title": "Realized YoY: CPI vs PCE vs Core",
+        "chart_type": "yoy",
+        "series": [
+            ("CPIAUCSL", "CPI"),
+            ("CPILFESL", "Core CPI"),
+            ("PCEPI", "PCE"),
+            ("PCEPILFE", "Core PCE"),
+        ],
+    },
+]
+
+
+def _render_inflation_charts(ctx: dict) -> str:
+    """Inflation tab: realized CPI/PCE alongside market + survey expectations."""
+    db_path = ctx.get("db_path", DB_PATH)
+    chart_csvs = ctx.setdefault("chart_csv_data", {})
+    since = (date.today() - timedelta(days=10 * 365)).isoformat()
+    chart_parts = []
+
+    for idx, comp in enumerate(_INFLATION_COMPARISONS):
+        series_data = []
+        for i, (sid, label) in enumerate(comp["series"]):
+            pts = _housing_chart_data(sid, comp["chart_type"], since, db_path)
+            if pts:
+                color = _HOUSING_CHART_COLORS[i % len(_HOUSING_CHART_COLORS)]
+                series_data.append((label, color, pts))
+
+        if not series_data:
+            continue
+
+        is_yoy = comp["chart_type"] == "yoy"
+        chart_id = f"infl-chart-{idx}"
+        svg = _multi_series_chart_svg(
+            series_data, comp["title"], is_yoy, chart_id=chart_id,
+        )
+        if not svg:
+            continue
+
+        chart_csvs[chart_id] = _multi_series_csv(
+            [(label, pts) for label, _, pts in series_data]
+        )
+        fname_base = f"inflation_{_slug(comp['title'])}"
+
+        chart_parts.append(f"""
+        <div class="hero-chart chart-wrap" id="{chart_id}-container">
+          <div class="chart-title">{comp['title']}</div>
+          {svg}
+          <div class="chart-tooltip" id="tip-{chart_id}"></div>
+          <div class="chart-actions">
+            <button class="btn-export" onclick="downloadChartCsv('{chart_id}', '{fname_base}')">CSV</button>
+          </div>
+        </div>""")
+
+    if not chart_parts:
+        return ""
+
+    return (
+        '<h2 style="margin-top:0">Inflation — Realized vs Expectations</h2>\n'
+        '<p class="muted">Realized CPI/PCE (BLS, BEA) overlaid with market-based '
+        'Treasury breakevens and Cleveland Fed survey/model expectations. '
+        'Breakevens carry a liquidity/risk premium and track CPI (not PCE), '
+        'so a small wedge vs PCE is normal.</p>\n'
         + "\n".join(chart_parts)
     )
 
