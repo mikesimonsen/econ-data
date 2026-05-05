@@ -69,20 +69,24 @@ def _format_revisions(revisions: list) -> str:
 
 
 def _empty_result() -> dict:
-    return {"new": [], "counts": {}, "checked": [], "all_fetched": []}
+    return {"new": [], "counts": {}, "checked": [], "all_fetched": [],
+            "captured_advanced": []}
 
 
-def _mark_captured(observations: list) -> None:
+def _mark_captured(observations: list, advanced: list) -> None:
     """Advance release_schedule for each observation that arrived. Called after
     every save() so the schedule's PENDING/CAPTURED state stays in sync. The
     FRED fetcher (fetch_all) calls mark_captured itself; this helper handles
-    everything else (NAR, MND, BLS, Altos, etc.)."""
+    everything else (NAR, MND, BLS, Altos, etc.). Appends to `advanced` for
+    each obs that actually transitioned a PENDING/OVERDUE row — that's the
+    truthful 'we captured something new' signal used downstream."""
     if not observations:
         return
     from econ_data.release_schedule import mark_captured
     for obs in observations:
         try:
-            mark_captured(obs.series_id, obs.date)
+            if mark_captured(obs.series_id, obs.date):
+                advanced.append(obs.series_id)
         except Exception as e:
             log(f"  (mark_captured {obs.series_id}: {e})")
 
@@ -95,6 +99,8 @@ def _merge(into: dict, other: dict) -> None:
         into.setdefault("checked", []).extend(other["checked"])
     if "all_fetched" in other:
         into.setdefault("all_fetched", []).extend(other["all_fetched"])
+    if "captured_advanced" in other:
+        into.setdefault("captured_advanced", []).extend(other["captured_advanced"])
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -109,7 +115,7 @@ def fetch_morning(cfg: dict, last_dates: dict, last_checked: dict) -> tuple[dict
     nar = fetch_nar(last_dates=last_dates)
     if nar["new"]:
         save(nar["new"])
-        _mark_captured(nar["new"])
+        _mark_captured(nar["new"], result["captured_advanced"])
         last_dates = get_last_dates()  # refresh so FRED skips these series
         log(f"NAR scraper: {len(nar['new'])} observations")
 
@@ -144,7 +150,7 @@ def fetch_morning(cfg: dict, last_dates: dict, last_checked: dict) -> tuple[dict
     mnd = fetch_mnd(last_dates=last_dates)
     if mnd["new"]:
         save(mnd["new"])
-        _mark_captured(mnd["new"])
+        _mark_captured(mnd["new"], result["captured_advanced"])
     _merge(result, mnd)
 
     bls_map = build_series_map(cfg)
@@ -153,49 +159,49 @@ def fetch_morning(cfg: dict, last_dates: dict, last_checked: dict) -> tuple[dict
         bls = fetch_bls(bls_map, last_dates=last_dates)
         if bls["new"]:
             save(bls["new"])
-            _mark_captured(bls["new"])
+            _mark_captured(bls["new"], result["captured_advanced"])
         _merge(result, bls)
 
     log("Fetching Altos weekly inventory...")
     altos = fetch_altos(last_dates=last_dates)
     if altos["new"]:
         save(altos["new"])
-        _mark_captured(altos["new"])
+        _mark_captured(altos["new"], result["captured_advanced"])
     _merge(result, altos)
 
     log("Fetching Xactus MII...")
     xactus = fetch_xactus(last_dates=last_dates)
     if xactus["new"]:
         save(xactus["new"])
-        _mark_captured(xactus["new"])
+        _mark_captured(xactus["new"], result["captured_advanced"])
     _merge(result, xactus)
 
     log("Fetching web-scraped series (MBA, etc.)...")
     web = fetch_web(last_dates=last_dates)
     if web["new"]:
         save(web["new"])
-        _mark_captured(web["new"])
+        _mark_captured(web["new"], result["captured_advanced"])
     _merge(result, web)
 
     log("Fetching Conference Board confidence...")
     cb = fetch_confboard(last_dates=last_dates)
     if cb["new"]:
         save(cb["new"])
-        _mark_captured(cb["new"])
+        _mark_captured(cb["new"], result["captured_advanced"])
     _merge(result, cb)
 
     log("Fetching Realtor.com bonus metrics...")
     realtor = fetch_realtor(last_dates=last_dates)
     if realtor["new"]:
         save(realtor["new"])
-        _mark_captured(realtor["new"])
+        _mark_captured(realtor["new"], result["captured_advanced"])
     _merge(result, realtor)
 
     log("Fetching Redfin housing data...")
     redfin = fetch_redfin(last_dates=last_dates)
     if redfin["new"]:
         save(redfin["new"])
-        _mark_captured(redfin["new"])
+        _mark_captured(redfin["new"], result["captured_advanced"])
     _merge(result, redfin)
 
     log("Computing mortgage rate spread...")
@@ -232,7 +238,7 @@ def fetch_intraday(cfg: dict, last_dates: dict) -> tuple[dict, list]:
     mnd = fetch_mnd(last_dates=last_dates)
     if mnd["new"]:
         save(mnd["new"])
-        _mark_captured(mnd["new"])
+        _mark_captured(mnd["new"], result["captured_advanced"])
     _merge(result, mnd)
 
     failed_ids = get_failed_series()
@@ -399,18 +405,14 @@ def post_process(cfg: dict, series: list, result: dict, revisions: list) -> None
         )
         return content
 
-    # Derived series are recomputed every run from their inputs (spread, rolling
-    # averages, affordability ratio) so they always show up in result["new"].
-    # Don't let those count as "new data" for the LLM-regen gate — only
-    # source captures from upstream publishers should retrigger analyses.
-    from econ_data.calc_rolling import ROLLING_SERIES
-    derived_ids = {derived for _src, _w, derived, _n in ROLLING_SERIES}
-    for gid, g in cfg.get("groups", {}).items():
-        if g.get("source") == "calculated":
-            for s in g["series"]:
-                derived_ids.add(s["id"])
-    source_obs = [o for o in new_obs if o.series_id not in derived_ids]
-    has_new_data = bool(source_obs) or bool(revisions)
+    # has_new_data fires only when at least one observation actually advanced
+    # the release_schedule (PENDING/OVERDUE → CAPTURED). result["new"] alone
+    # over-fires: it includes (a) derived series that recompute every run
+    # (spread, rolling, affordability) and (b) repeat-fetches of already-
+    # captured daily series like SP500 where Yahoo returns the full window
+    # each call. captured_advanced is the truthful signal — non-empty only
+    # when something genuinely new arrived.
+    has_new_data = bool(result.get("captured_advanced")) or bool(revisions)
     analysis_path = summary_dir / f"daily analysis {today}.md"
     housing_path = summary_dir / f"housing analysis {today}.md"
 

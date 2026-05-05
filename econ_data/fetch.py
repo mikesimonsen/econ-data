@@ -110,6 +110,7 @@ def fetch_all(series: list, last_dates: dict = None,
     all_fetched = []
     counts = {}
     checked = []
+    captured_advanced: list = []
     fetched = 0
 
     for series_id, name in series:
@@ -146,9 +147,13 @@ def fetch_all(series: list, last_dates: dict = None,
 
             # Advance the schedule for each new period that arrived. If FRED
             # had no new data, nothing was captured — the PENDING row stays
-            # so the next cron firing retries.
+            # so the next cron firing retries. mark_captured returns True
+            # when it actually transitioned a PENDING/OVERDUE row, which is
+            # the truthful "we captured something new" signal used downstream
+            # to gate LLM regen.
             for obs in new_only:
-                mark_captured(series_id, obs.date)
+                if mark_captured(series_id, obs.date):
+                    captured_advanced.append(series_id)
         except Exception as e:
             ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"[{ts}] SKIPPED {series_id} — {e}")
@@ -161,4 +166,4 @@ def fetch_all(series: list, last_dates: dict = None,
                 print(f"[{ts}] (could not record fetch_error for {series_id}: {rec_err})")
 
     return {"new": all_new, "counts": counts, "checked": checked,
-            "all_fetched": all_fetched}
+            "all_fetched": all_fetched, "captured_advanced": captured_advanced}
