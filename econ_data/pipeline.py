@@ -399,7 +399,18 @@ def post_process(cfg: dict, series: list, result: dict, revisions: list) -> None
         )
         return content
 
-    has_new_data = bool(new_obs) or bool(revisions)
+    # Derived series are recomputed every run from their inputs (spread, rolling
+    # averages, affordability ratio) so they always show up in result["new"].
+    # Don't let those count as "new data" for the LLM-regen gate — only
+    # source captures from upstream publishers should retrigger analyses.
+    from econ_data.calc_rolling import ROLLING_SERIES
+    derived_ids = {derived for _src, _w, derived, _n in ROLLING_SERIES}
+    for gid, g in cfg.get("groups", {}).items():
+        if g.get("source") == "calculated":
+            for s in g["series"]:
+                derived_ids.add(s["id"])
+    source_obs = [o for o in new_obs if o.series_id not in derived_ids]
+    has_new_data = bool(source_obs) or bool(revisions)
     analysis_path = summary_dir / f"daily analysis {today}.md"
     housing_path = summary_dir / f"housing analysis {today}.md"
 
