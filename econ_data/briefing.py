@@ -586,6 +586,15 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
     from econ_data.expectations import get_upcoming_releases
     upcoming_releases = get_upcoming_releases(days_ahead=7, db_path=db_path)
 
+    from econ_data.release_schedule import (
+        get_captured_today, get_overdue, get_upcoming as get_upcoming_schedule,
+    )
+    schedule_status = {
+        "captured": get_captured_today(),
+        "overdue": get_overdue(),
+        "upcoming": get_upcoming_schedule(days=7),
+    }
+
     from econ_data.fed_expectations import render_fed_chart
     fed_chart_html = render_fed_chart(db_path=db_path)
 
@@ -624,6 +633,7 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
         analysis_html=_md_to_html(analysis_md, name_map) if analysis_md else "",
         housing_html=housing_html,
         upcoming_releases=upcoming_releases,
+        schedule_status=schedule_status,
         fed_chart_html=fed_chart_html,
         today_series=today_series,
         recent_series=recent_series,
@@ -1911,13 +1921,75 @@ def _render_hero_charts(ctx) -> str:
     return "\n".join(parts)
 
 
+def _render_release_status(ctx) -> str:
+    """Captured today / Overdue / Upcoming sourced from release_schedule.
+
+    The richer 'Releases' panel that says "expected data has/has-not been
+    captured today" — drives the answer to "is the data right?" at a glance.
+    """
+    status = ctx.get("schedule_status") or {}
+    captured = status.get("captured", [])
+    overdue = status.get("overdue", [])
+    upcoming = status.get("upcoming", [])
+    if not (captured or overdue or upcoming):
+        return ""
+
+    parts = ['<div class="release-status">']
+
+    if captured:
+        rows = "".join(
+            f'<li><code>{c["series_id"]}</code> — period {c["captured_period_end"] or "?"}</li>'
+            for c in captured[:50]
+        )
+        parts.append(
+            f'<h3 class="status-captured">Captured today ({len(captured)})</h3>'
+            f'<ul class="status-list">{rows}</ul>'
+        )
+
+    if overdue:
+        rows = "".join(
+            f'<li><code>{o["series_id"]}</code> — '
+            f'expected {o["scheduled_release"]} '
+            f'<span class="muted">({o["days_late"]}d late)</span>'
+            f'{(" — " + o["notes"]) if o["notes"] else ""}</li>'
+            for o in overdue[:50]
+        )
+        parts.append(
+            f'<h3 class="status-overdue">Overdue ({len(overdue)} — '
+            f'expected data not yet captured)</h3>'
+            f'<ul class="status-list">{rows}</ul>'
+        )
+
+    if upcoming:
+        # Group by date
+        by_date: dict = {}
+        for u in upcoming:
+            by_date.setdefault(u["scheduled_release"], []).append(u)
+        day_blocks = []
+        for d in sorted(by_date.keys())[:7]:
+            sids = ", ".join(f'<code>{u["series_id"]}</code>'
+                             for u in by_date[d][:20])
+            extra = f" + {len(by_date[d])-20} more" if len(by_date[d]) > 20 else ""
+            day_blocks.append(f"<li><b>{d}</b> — {sids}{extra}</li>")
+        parts.append(
+            f'<h3 class="status-upcoming">Upcoming next 7 days '
+            f'({len(upcoming)} releases)</h3>'
+            f'<ul class="status-list">{"".join(day_blocks)}</ul>'
+        )
+
+    parts.append("</div>")
+    return "\n".join(parts)
+
+
 def _render_upcoming(ctx) -> str:
     """Render the Upcoming tab — releases expected in the next 7 days."""
     from datetime import datetime
     upcoming = ctx.get("upcoming_releases", [])
     source_urls = ctx.get("source_urls", {})
+    status_html = _render_release_status(ctx)
+
     if not upcoming:
-        return "<p class='muted'>No tracked releases expected in the next 7 days.</p>"
+        return status_html or "<p class='muted'>No tracked releases expected in the next 7 days.</p>"
 
     # Group by release date
     by_date = {}
@@ -1997,7 +2069,7 @@ def _render_upcoming(ctx) -> str:
         '<code>fetch_expectations.py</code>. Run that to populate '
         'missing forecasts.</p>'
     )
-    return "\n".join(parts) + note
+    return status_html + "\n".join(parts) + note
 
 
 def _render_today(ctx) -> str:
@@ -2467,6 +2539,18 @@ main { padding: 24px 32px; max-width: 1400px; }
 .muted { color: var(--text-muted); padding: 32px 0; }
 .search-active .analysis-block { display: none; }
 .search-active .muted { display: none; }
+
+.release-status { margin-bottom: 24px; }
+.release-status h3 { margin: 16px 0 8px 0; font-size: 14px; }
+.release-status .status-list { list-style: none; padding-left: 8px; margin: 0;
+                               font-family: var(--font-mono); font-size: 13px; }
+.release-status .status-list li { padding: 2px 0; }
+.release-status .status-list code { background: var(--bg-subtle); padding: 1px 4px;
+                                    border-radius: 3px; }
+.release-status .status-list .muted { color: var(--text-muted); padding: 0; }
+.status-captured { color: #198754; }
+.status-overdue  { color: #dc3545; }
+.status-upcoming { color: var(--text-muted); }
 
 .revision-row td {
   padding: 4px 12px !important;

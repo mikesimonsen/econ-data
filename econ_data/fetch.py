@@ -13,14 +13,6 @@ load_dotenv()
 # Delay between FRED API calls to avoid rate limiting (120 req/min)
 API_DELAY = 0.6  # seconds
 
-# After receiving new data, wait this many days before checking again
-COOLDOWN_DAYS = {
-    "daily": 0,       # always check
-    "weekly": 4,      # wait 4 days after last observation
-    "monthly": 28,    # wait ~1 month after last observation
-    "quarterly": 70,  # wait ~10 weeks after last observation
-}
-
 
 @dataclass
 class Observation:
@@ -31,40 +23,14 @@ class Observation:
 
 
 def _detect_frequency(series_id: str) -> str:
-    """Guess frequency from the series_id."""
+    """Guess frequency from the series_id. Used by the revision-window logic
+    to decide how to fetch (daily series skip the lookback window)."""
     if (series_id.startswith("DGS")
-            or series_id in ("WTI_CRUDE", "T5YIE", "T10YIE", "T5YIFR")):
+            or series_id in ("WTI_CRUDE", "T5YIE", "T10YIE", "T5YIFR", "SP500")):
         return "daily"
     if series_id in ("ICSA", "IC4WSA", "CCSA", "CC4WSA", "IURSA"):
         return "weekly"
     return "monthly"
-
-
-def _should_fetch(series_id: str, last_obs: date = None,
-                  last_checked: date = None) -> bool:
-    """Decide if it's time to check FRED for new data.
-
-    Logic per frequency:
-      - After receiving new data, wait COOLDOWN_DAYS before checking again.
-      - Once the cooldown expires, check daily until new data arrives.
-      - Never re-check on the same day we already checked.
-    """
-    if last_obs is None:
-        return True  # never fetched — always check
-
-    if last_checked is not None and last_checked >= date.today():
-        return False  # already checked today
-
-    freq = _detect_frequency(series_id)
-    cooldown = COOLDOWN_DAYS.get(freq, 21)
-    days_since_obs = (date.today() - last_obs).days
-
-    # Still in cooldown period after last observation — skip
-    if days_since_obs <= cooldown:
-        return False
-
-    # Cooldown expired — check daily until new data arrives
-    return True
 
 
 REVISION_LOOKBACK_MONTHS = 4  # re-fetch this many months to catch revisions
@@ -116,37 +82,29 @@ def fetch_series_with_revisions(series_id: str, name: str,
 
 
 def fetch_all(series: list, last_dates: dict = None,
-              last_checked: dict = None, force: bool = False) -> dict:
-    """
-    Fetch updates for all (series_id, name) pairs.
+              force: bool = False, **_compat) -> dict:
+    """Fetch updates for all (series_id, name) pairs.
 
-    Uses smart scheduling based on observation recency:
-      - Recently updated series sleep for a cooldown period
-      - Series past their cooldown get checked daily until new data arrives
-    When fetching, pulls last 4 months of data to detect revisions.
+    Scheduling is driven by the release_schedule table — a series is only
+    queried if it has a PENDING/OVERDUE row whose scheduled_release <= today.
+    On capture, mark_captured advances the schedule. Series whose latest
+    release has already been captured are skipped without an API call.
 
     last_dates: {series_id: date} of the most recent observation in the DB.
-    last_checked: {series_id: date} of when each series was last checked.
-    force: if True, bypass _should_fetch (cooldown + already-checked-today).
-        Used by the intraday retry path so a series that errored this morning
-        gets re-tried even though fetch_log already records it as checked.
+    force: if True, bypass schedule check (intraday retry of fetch_errors).
     Returns {"new": [Observation, ...], "counts": {series_id: int},
              "checked": [series_id, ...], "all_fetched": [Observation, ...]}
     counts:  >0 = new observations,  0 = no new data or skipped,  -1 = error
-    checked: series that were actually queried (for updating fetch_log)
-    all_fetched: all observations returned (including revision window), for
-        revision detection before save
 
     Also maintains the fetch_errors table: records a row on exception, deletes
     it on success. The intraday run reads that table to decide what to retry.
     """
-    # Local import to avoid a circular import at module load time.
+    # Local imports to avoid a circular import at module load time.
     from econ_data.store import clear_fetch_error, record_fetch_error
+    from econ_data.release_schedule import series_due_now, mark_captured
 
     if last_dates is None:
         last_dates = {}
-    if last_checked is None:
-        last_checked = {}
 
     all_new = []
     all_fetched = []
@@ -156,9 +114,9 @@ def fetch_all(series: list, last_dates: dict = None,
 
     for series_id, name in series:
         last_obs = last_dates.get(series_id)
-        lc = last_checked.get(series_id)
 
-        if not force and not _should_fetch(series_id, last_obs, lc):
+        if not force and not series_due_now(series_id):
+            # No PENDING release scheduled — skip without an API call.
             counts[series_id] = 0
             continue
 
@@ -176,7 +134,6 @@ def fetch_all(series: list, last_dates: dict = None,
                 # Weekly/monthly: fetch revision window to catch changes
                 results = fetch_series_with_revisions(series_id, name,
                                                      last_obs=last_obs)
-                # New observations are those with dates after last_obs
                 new_only = [o for o in results
                             if last_obs is None or o.date > last_obs]
 
@@ -186,6 +143,12 @@ def fetch_all(series: list, last_dates: dict = None,
             checked.append(series_id)
             fetched += 1
             clear_fetch_error(series_id)
+
+            # Advance the schedule for each new period that arrived. If FRED
+            # had no new data, nothing was captured — the PENDING row stays
+            # so the next cron firing retries.
+            for obs in new_only:
+                mark_captured(series_id, obs.date)
         except Exception as e:
             ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"[{ts}] SKIPPED {series_id} — {e}")

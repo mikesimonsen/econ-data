@@ -92,3 +92,47 @@ CREATE TABLE IF NOT EXISTS release_calendar (
     updated_at   TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (release_date, report)
 );
+
+-- Per-series expected releases. One row per (series_id, scheduled_release) —
+-- the date the source intends to publish a new observation. period_end isn't
+-- the PK because (a) we often don't know the exact period the release will
+-- cover until it lands, and (b) sources occasionally combine periods (e.g.
+-- Census published Feb+Mar new home sales together on 2026-05-05 after a
+-- delay). Captured_period_end records what actually arrived.
+--
+-- Status transitions:
+--   PENDING  → CAPTURED  when a new obs arrives (or FRED last_updated advances)
+--   PENDING  → OVERDUE   when scheduled_release + grace_days < today and no data
+--   OVERDUE  → CAPTURED  when late data finally arrives
+--   OVERDUE  → DELAYED   when a human acknowledges the delay (gov shutdown etc.);
+--                        sweep skips DELAYED so alerts stop firing
+CREATE TABLE IF NOT EXISTS release_schedule (
+    series_id           TEXT        NOT NULL,
+    scheduled_release   DATE        NOT NULL,
+    expected_time_et    TIME,
+    grace_days          INTEGER     NOT NULL DEFAULT 3,
+    status              TEXT        NOT NULL DEFAULT 'PENDING',
+    captured_at         TIMESTAMPTZ,
+    captured_period_end DATE,
+    source_last_updated TIMESTAMPTZ,
+    notes               TEXT,
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (series_id, scheduled_release),
+    CHECK (status IN ('PENDING', 'CAPTURED', 'OVERDUE', 'DELAYED'))
+);
+CREATE INDEX IF NOT EXISTS release_schedule_status_idx
+    ON release_schedule (status, scheduled_release);
+CREATE INDEX IF NOT EXISTS release_schedule_due_idx
+    ON release_schedule (scheduled_release) WHERE status IN ('PENDING','OVERDUE');
+
+-- Maps each FRED series to its release_id (FRED's grouping for batch
+-- publications like "Employment Situation" or "New Residential Sales").
+-- Populated once via fred/series/release; cached forever (release_id is
+-- stable). Used by the calendar refresher to pull schedules in bulk.
+CREATE TABLE IF NOT EXISTS series_release (
+    series_id  TEXT        PRIMARY KEY,
+    release_id INTEGER     NOT NULL,
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS series_release_release_idx
+    ON series_release (release_id);

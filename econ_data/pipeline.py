@@ -72,6 +72,21 @@ def _empty_result() -> dict:
     return {"new": [], "counts": {}, "checked": [], "all_fetched": []}
 
 
+def _mark_captured(observations: list) -> None:
+    """Advance release_schedule for each observation that arrived. Called after
+    every save() so the schedule's PENDING/CAPTURED state stays in sync. The
+    FRED fetcher (fetch_all) calls mark_captured itself; this helper handles
+    everything else (NAR, MND, BLS, Altos, etc.)."""
+    if not observations:
+        return
+    from econ_data.release_schedule import mark_captured
+    for obs in observations:
+        try:
+            mark_captured(obs.series_id, obs.date)
+        except Exception as e:
+            log(f"  (mark_captured {obs.series_id}: {e})")
+
+
 def _merge(into: dict, other: dict) -> None:
     """Merge a fetcher's return dict into the running pipeline result."""
     into["new"].extend(other.get("new", []))
@@ -94,6 +109,7 @@ def fetch_morning(cfg: dict, last_dates: dict, last_checked: dict) -> tuple[dict
     nar = fetch_nar(last_dates=last_dates)
     if nar["new"]:
         save(nar["new"])
+        _mark_captured(nar["new"])
         last_dates = get_last_dates()  # refresh so FRED skips these series
         log(f"NAR scraper: {len(nar['new'])} observations")
 
@@ -128,6 +144,7 @@ def fetch_morning(cfg: dict, last_dates: dict, last_checked: dict) -> tuple[dict
     mnd = fetch_mnd(last_dates=last_dates)
     if mnd["new"]:
         save(mnd["new"])
+        _mark_captured(mnd["new"])
     _merge(result, mnd)
 
     bls_map = build_series_map(cfg)
@@ -136,42 +153,49 @@ def fetch_morning(cfg: dict, last_dates: dict, last_checked: dict) -> tuple[dict
         bls = fetch_bls(bls_map, last_dates=last_dates)
         if bls["new"]:
             save(bls["new"])
+            _mark_captured(bls["new"])
         _merge(result, bls)
 
     log("Fetching Altos weekly inventory...")
     altos = fetch_altos(last_dates=last_dates)
     if altos["new"]:
         save(altos["new"])
+        _mark_captured(altos["new"])
     _merge(result, altos)
 
     log("Fetching Xactus MII...")
     xactus = fetch_xactus(last_dates=last_dates)
     if xactus["new"]:
         save(xactus["new"])
+        _mark_captured(xactus["new"])
     _merge(result, xactus)
 
     log("Fetching web-scraped series (MBA, etc.)...")
     web = fetch_web(last_dates=last_dates)
     if web["new"]:
         save(web["new"])
+        _mark_captured(web["new"])
     _merge(result, web)
 
     log("Fetching Conference Board confidence...")
     cb = fetch_confboard(last_dates=last_dates)
     if cb["new"]:
         save(cb["new"])
+        _mark_captured(cb["new"])
     _merge(result, cb)
 
     log("Fetching Realtor.com bonus metrics...")
     realtor = fetch_realtor(last_dates=last_dates)
     if realtor["new"]:
         save(realtor["new"])
+        _mark_captured(realtor["new"])
     _merge(result, realtor)
 
     log("Fetching Redfin housing data...")
     redfin = fetch_redfin(last_dates=last_dates)
     if redfin["new"]:
         save(redfin["new"])
+        _mark_captured(redfin["new"])
     _merge(result, redfin)
 
     log("Computing mortgage rate spread...")
@@ -208,6 +232,7 @@ def fetch_intraday(cfg: dict, last_dates: dict) -> tuple[dict, list]:
     mnd = fetch_mnd(last_dates=last_dates)
     if mnd["new"]:
         save(mnd["new"])
+        _mark_captured(mnd["new"])
     _merge(result, mnd)
 
     failed_ids = get_failed_series()
@@ -293,6 +318,21 @@ def post_process(cfg: dict, series: list, result: dict, revisions: list) -> None
 
     save_groups(cfg)
 
+    log("Sweeping release_schedule for overdue releases...")
+    from econ_data.release_schedule import sweep_overdue, get_overdue
+    newly_overdue = sweep_overdue()
+    if newly_overdue:
+        log(f"Marked {len(newly_overdue)} releases OVERDUE this run.")
+    overdue = get_overdue()
+    if overdue:
+        log(f"Currently overdue ({len(overdue)} series — expected data not captured):")
+        for r in overdue[:30]:
+            note = f" — {r['notes']}" if r["notes"] else ""
+            log(f"  {r['series_id']:<20} expected {r['scheduled_release']} "
+                f"({r['days_late']}d late){note}")
+        if len(overdue) > 30:
+            log(f"  ... and {len(overdue)-30} more")
+
     log("Computing period % and YoY % for all series...")
     calc_rows = compute_all()
     log(f"Computed {calc_rows} calculated values (period %, YoY %).")
@@ -321,33 +361,47 @@ def post_process(cfg: dict, series: list, result: dict, revisions: list) -> None
     signals_path.write_text(signals_header + signals_report + "\n")
     log(f"Signals saved to {signals_path}")
 
-    log("Generating daily analysis...")
-    try:
-        analysis = generate_daily_analysis(
-            signals_text=signals_header + signals_report,
-            summary_text=summary_header + report,
-        )
-        analysis_path = summary_dir / f"daily analysis {today}.md"
-        analysis_content = (
-            f"# Daily Analysis — {today}\n\n"
-            + analysis
-            + "\n\n---\n\n"
-            + f"## Signals\n\n```\n{signals_report}\n```\n\n"
-            + f"## Full Summary\n\n```\n{report}\n```\n"
-        )
-        analysis_path.write_text(analysis_content)
-        log(f"Daily analysis saved to {analysis_path}")
-    except Exception as e:
-        log(f"Daily analysis failed: {e}")
+    # Gate the LLM analyses on "did anything new arrive this run?". The
+    # briefing HTML is cheap to regenerate (no LLM), but daily_analysis and
+    # housing_analysis each cost ~$0.04 per run. Without this gate, firing
+    # the morning cohort 3x/day (07/09/10:30 ET) would burn LLM cost on
+    # identical inputs. We still regen if revisions arrived (they can change
+    # the narrative).
+    has_new_data = bool(new_obs) or bool(revisions)
+    analysis_path = summary_dir / f"daily analysis {today}.md"
+    housing_path = summary_dir / f"housing analysis {today}.md"
 
-    log("Generating housing analysis...")
-    try:
-        housing_md = generate_housing_analysis(cfg)
-        housing_path = summary_dir / f"housing analysis {today}.md"
-        housing_path.write_text(f"# Housing Analysis — {today}\n\n{housing_md}\n")
-        log(f"Housing analysis saved to {housing_path}")
-    except Exception as e:
-        log(f"Housing analysis failed: {e}")
+    if has_new_data or not analysis_path.exists():
+        log("Generating daily analysis...")
+        try:
+            analysis = generate_daily_analysis(
+                signals_text=signals_header + signals_report,
+                summary_text=summary_header + report,
+            )
+            analysis_content = (
+                f"# Daily Analysis — {today}\n\n"
+                + analysis
+                + "\n\n---\n\n"
+                + f"## Signals\n\n```\n{signals_report}\n```\n\n"
+                + f"## Full Summary\n\n```\n{report}\n```\n"
+            )
+            analysis_path.write_text(analysis_content)
+            log(f"Daily analysis saved to {analysis_path}")
+        except Exception as e:
+            log(f"Daily analysis failed: {e}")
+    else:
+        log("Daily analysis: no new data this run — keeping existing.")
+
+    if has_new_data or not housing_path.exists():
+        log("Generating housing analysis...")
+        try:
+            housing_md = generate_housing_analysis(cfg)
+            housing_path.write_text(f"# Housing Analysis — {today}\n\n{housing_md}\n")
+            log(f"Housing analysis saved to {housing_path}")
+        except Exception as e:
+            log(f"Housing analysis failed: {e}")
+    else:
+        log("Housing analysis: no new data this run — keeping existing.")
 
     log("Generating editorial briefing...")
     try:

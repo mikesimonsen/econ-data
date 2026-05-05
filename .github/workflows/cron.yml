@@ -1,21 +1,42 @@
-name: Daily pipeline (7 AM + 4 PM ET)
+name: Pipeline schedule
 
-# Triggers the existing Fly machine in econ-data-cron at two times daily.
-# Two schedules per cohort cover both DST states; the runtime guard picks the
-# matching one. Match by (scheduled cron expression × current DST), not by
-# current hour — GitHub Actions cron is regularly delayed 30–90 minutes,
-# which would push the current ET hour past the target and cause a false skip.
+# Triggers the Fly machine in econ-data-cron throughout the day to align with
+# US economic release windows. The schedule-driven fetcher (release_schedule
+# table) ensures each firing only does work for series whose scheduled_release
+# is on or before today and not yet CAPTURED — so subsequent firings are
+# cheap on days nothing was released, and reliably catch the day-of release.
+#
+# Two cron entries per ET time cover EDT and EST; the runtime guard at the
+# bottom matches by (scheduled cron expression × current DST) and skips the
+# wrong one. We must NOT match by current ET hour — GitHub Actions cron is
+# regularly delayed 30–90 minutes, which would push the current hour past
+# the target and cause a false skip.
 #
 # Cohorts:
-#   morning   (7 AM ET) — full fetch: NAR, FRED, MND, BLS, Altos, web, etc.
-#   intraday  (4 PM ET) — MND + retry of FRED series in fetch_errors.
+#   morning   — full fetch (NAR, FRED, MND, BLS, Altos, web, etc.). Fired at
+#               07:00 / 09:00 / 10:30 ET so the user, opening their laptop at
+#               7:30 AM PT (10:30 ET), already has all morning releases.
+#   intraday  — MND refresh + retry of FRED series in fetch_errors. 16:00 ET.
+#   calendar  — weekly refresh of release_schedule from FRED's release/dates
+#               API and config.yaml cadence rules. Sundays at 06:00 ET.
 
 on:
   schedule:
-    - cron: '0 11 * * *'  # 7 AM EDT  morning
-    - cron: '0 12 * * *'  # 7 AM EST  morning
-    - cron: '0 20 * * *'  # 4 PM EDT  intraday
-    - cron: '0 21 * * *'  # 4 PM EST  intraday
+    # 07:00 ET — overnight markets, daily Treasury/SP500/oil
+    - cron: '0 11 * * *'        # 07:00 EDT
+    - cron: '0 12 * * *'        # 07:00 EST
+    # 09:00 ET — captures 08:30 ET releases (CPI, PPI, payrolls, claims, etc.)
+    - cron: '0 13 * * *'        # 09:00 EDT
+    - cron: '0 14 * * *'        # 09:00 EST
+    # 10:30 ET — captures 10:00 ET releases (JOLTS, ISM, Census, Conf Board)
+    - cron: '30 14 * * *'       # 10:30 EDT
+    - cron: '30 15 * * *'       # 10:30 EST
+    # 16:00 ET — late-day MND, retry FRED fetch_errors
+    - cron: '0 20 * * *'        # 16:00 EDT
+    - cron: '0 21 * * *'        # 16:00 EST
+    # Sunday 06:00 ET — weekly release_schedule refresh
+    - cron: '0 10 * * 0'        # 06:00 EDT Sun
+    - cron: '0 11 * * 0'        # 06:00 EST Sun
   workflow_dispatch:
     inputs:
       cohort:
@@ -26,6 +47,7 @@ on:
         options:
           - morning
           - intraday
+          - calendar
 
 jobs:
   run:
@@ -47,10 +69,16 @@ jobs:
             SHOULD_RUN=false
             COHORT=""
             case "$SCHEDULE:$TZ_NAME" in
-              "0 11 * * *:EDT") COHORT=morning;  SHOULD_RUN=true ;;
-              "0 12 * * *:EST") COHORT=morning;  SHOULD_RUN=true ;;
-              "0 20 * * *:EDT") COHORT=intraday; SHOULD_RUN=true ;;
-              "0 21 * * *:EST") COHORT=intraday; SHOULD_RUN=true ;;
+              "0 11 * * *:EDT")    COHORT=morning;  SHOULD_RUN=true ;;
+              "0 12 * * *:EST")    COHORT=morning;  SHOULD_RUN=true ;;
+              "0 13 * * *:EDT")    COHORT=morning;  SHOULD_RUN=true ;;
+              "0 14 * * *:EST")    COHORT=morning;  SHOULD_RUN=true ;;
+              "30 14 * * *:EDT")   COHORT=morning;  SHOULD_RUN=true ;;
+              "30 15 * * *:EST")   COHORT=morning;  SHOULD_RUN=true ;;
+              "0 20 * * *:EDT")    COHORT=intraday; SHOULD_RUN=true ;;
+              "0 21 * * *:EST")    COHORT=intraday; SHOULD_RUN=true ;;
+              "0 10 * * 0:EDT")    COHORT=calendar; SHOULD_RUN=true ;;
+              "0 11 * * 0:EST")    COHORT=calendar; SHOULD_RUN=true ;;
               *) echo "Schedule $SCHEDULE doesn't match TZ $TZ_NAME — skipping." ;;
             esac
           fi
@@ -58,6 +86,7 @@ jobs:
           case "$COHORT" in
             morning)  RUN_SCRIPT=run.py ;;
             intraday) RUN_SCRIPT=run_intraday.py ;;
+            calendar) RUN_SCRIPT=run_calendar.py ;;
             *)        RUN_SCRIPT="" ;;
           esac
 

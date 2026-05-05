@@ -37,6 +37,11 @@ groups:
   cpi-metro:
     name: "CPI by Metro Area (BLS)"
     signals: minimal
+    cadence:                 # applies to BLS-direct series (bls_id) only;
+      frequency: monthly     # FRED series in this group use FRED's calendar
+      rule: "around-12"      # CPI typically releases on the 10th-12th
+      release_time_et: "08:30"
+      grace_days: 4
     series:
       # --- Available via FRED ---
       - id: CUURA101SA0
@@ -214,6 +219,8 @@ groups:
   affordability:
     name: "Housing Affordability"
     source: calculated
+    cadence:
+      frequency: derived  # depends on inputs (MND + median price); no own schedule
     series:
       - id: PRICE_TO_INCOME
         name: "Median Existing-Home Price / Median Household Income"
@@ -476,6 +483,11 @@ groups:
   realtor-dot-com-extra:
     name: "Realtor.com Bonus Metrics (S3 CSV)"
     source: realtor
+    cadence:
+      frequency: monthly
+      rule: "around-2"      # Realtor.com publishes early in the month
+      release_time_et: "10:00"
+      grace_days: 4
     series:
       - id: REALTOR_PENDING_RATIO
         name: "Pending Ratio (Realtor.com)"
@@ -488,6 +500,11 @@ groups:
   redfin:
     name: "Redfin Housing Market Data"
     source: redfin
+    cadence:
+      frequency: weekly
+      rule: "thursday"
+      release_time_et: "12:00"
+      grace_days: 3
     series:
       # Not Seasonally Adjusted
       - id: REDFIN_PENDING
@@ -629,6 +646,11 @@ groups:
   treasury-yields:
     name: "Treasury Yields (Daily)"
     source: web
+    cadence:
+      frequency: daily
+      rule: "weekday"
+      release_time_et: "16:30"
+      grace_days: 1
     signals: minimal
     series:
       - id: DGS10
@@ -649,6 +671,11 @@ groups:
   sp500:
     name: "S&P 500 Index (Daily)"
     source: web
+    cadence:
+      frequency: daily
+      rule: "weekday"
+      release_time_et: "16:30"
+      grace_days: 1
     signals: minimal
     series:
       - id: SP500
@@ -657,6 +684,11 @@ groups:
   oil:
     name: "Oil Prices (Daily)"
     source: web
+    cadence:
+      frequency: daily
+      rule: "weekday"
+      release_time_et: "16:30"
+      grace_days: 1
     signals: minimal
     series:
       - id: WTI_CRUDE
@@ -666,6 +698,8 @@ groups:
   mortgage-spread:
     name: "Mortgage Rate Spread (30Y Fixed - 10Y Treasury)"
     source: calculated
+    cadence:
+      frequency: derived  # depends on inputs (MND 30Y + DGS10)
     signals: minimal
     series:
       - id: SPREAD_30Y_10Y
@@ -681,6 +715,11 @@ groups:
   mortgage-rates:
     name: "Mortgage Rates (Mortgage News Daily)"
     source: mnd
+    cadence:
+      frequency: daily
+      rule: "weekday"
+      release_time_et: "16:00"
+      grace_days: 1
     signals: minimal
     series:
       - id: MND_30YR_FIXED
@@ -705,6 +744,11 @@ groups:
   consumer-confidence:
     name: "Consumer Confidence (Conference Board)"
     source: confboard
+    cadence:
+      frequency: monthly
+      rule: "last-tuesday"
+      release_time_et: "10:00"
+      grace_days: 5
     signals: minimal
     series:
       - id: CB_CCI
@@ -720,6 +764,11 @@ groups:
   mba-applications:
     name: "MBA Mortgage Applications"
     source: web
+    cadence:
+      frequency: weekly
+      rule: "wednesday"
+      release_time_et: "07:00"
+      grace_days: 2
     series:
       - id: MBA_PURCHASE
         name: "MBA Purchase Index"
@@ -734,6 +783,11 @@ groups:
   mortgage-intent:
     name: "Mortgage Intent Index (Xactus)"
     source: xactus
+    cadence:
+      frequency: monthly
+      rule: "around-15"
+      release_time_et: "09:00"
+      grace_days: 5
     series:
       - id: XACTUS_MII
         name: "Xactus Mortgage Intent Index"
@@ -748,6 +802,11 @@ groups:
   altos-inventory:
     name: "Altos Research Weekly Inventory"
     source: altos
+    cadence:
+      frequency: weekly
+      rule: "monday"
+      release_time_et: "12:00"
+      grace_days: 4         # manual upload — tolerate a few days slip
     seasonal: true
     series:
       - id: ALTOS_INVENTORY
@@ -756,6 +815,11 @@ groups:
   altos-new-listings:
     name: "Altos Research New Listings"
     source: altos
+    cadence:
+      frequency: weekly
+      rule: "monday"
+      release_time_et: "12:00"
+      grace_days: 4
     seasonal: true
     series:
       - id: ALTOS_NEW_LISTINGS
@@ -768,6 +832,11 @@ groups:
   altos-new-pending:
     name: "Altos New Pending Sales"
     source: altos
+    cadence:
+      frequency: weekly
+      rule: "monday"
+      release_time_et: "12:00"
+      grace_days: 4
     seasonal: true
     series:
       - id: ALTOS_NEW_PENDING
