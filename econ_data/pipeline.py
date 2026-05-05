@@ -367,41 +367,68 @@ def post_process(cfg: dict, series: list, result: dict, revisions: list) -> None
     # the morning cohort 3x/day (07/09/10:30 ET) would burn LLM cost on
     # identical inputs. We still regen if revisions arrived (they can change
     # the narrative).
+    #
+    # Analyses are persisted to the daily_analyses table because Fly clones
+    # a fresh repo each run and summaries/ is gitignored — without DB
+    # persistence, "skip if today's analysis already exists" never fires.
+    from econ_data.db import connect as _connect
+    _con = _connect()
+
+    def _load_or_save_analysis(kind: str, generator) -> str | None:
+        """Return today's analysis content, generating + persisting only if
+        we have new data or no prior analysis exists for today."""
+        existing = _con.execute(
+            "SELECT content FROM daily_analyses WHERE date_key = CURRENT_DATE AND kind = %s",
+            (kind,),
+        ).fetchone()
+        if existing and not has_new_data:
+            log(f"{kind.capitalize()} analysis: no new data this run — reusing from DB.")
+            return existing[0]
+        log(f"Generating {kind} analysis...")
+        try:
+            content = generator()
+        except Exception as e:
+            log(f"{kind.capitalize()} analysis failed: {e}")
+            return existing[0] if existing else None
+        _con.execute(
+            "INSERT INTO daily_analyses (date_key, kind, content, generated_at) "
+            "VALUES (CURRENT_DATE, %s, %s, NOW()) "
+            "ON CONFLICT (date_key, kind) DO UPDATE SET "
+            "content = EXCLUDED.content, generated_at = EXCLUDED.generated_at",
+            (kind, content),
+        )
+        return content
+
     has_new_data = bool(new_obs) or bool(revisions)
     analysis_path = summary_dir / f"daily analysis {today}.md"
     housing_path = summary_dir / f"housing analysis {today}.md"
 
-    if has_new_data or not analysis_path.exists():
-        log("Generating daily analysis...")
-        try:
-            analysis = generate_daily_analysis(
-                signals_text=signals_header + signals_report,
-                summary_text=summary_header + report,
-            )
-            analysis_content = (
-                f"# Daily Analysis — {today}\n\n"
-                + analysis
-                + "\n\n---\n\n"
-                + f"## Signals\n\n```\n{signals_report}\n```\n\n"
-                + f"## Full Summary\n\n```\n{report}\n```\n"
-            )
-            analysis_path.write_text(analysis_content)
-            log(f"Daily analysis saved to {analysis_path}")
-        except Exception as e:
-            log(f"Daily analysis failed: {e}")
-    else:
-        log("Daily analysis: no new data this run — keeping existing.")
+    daily_content = _load_or_save_analysis(
+        "daily",
+        lambda: generate_daily_analysis(
+            signals_text=signals_header + signals_report,
+            summary_text=summary_header + report,
+        ),
+    )
+    if daily_content:
+        analysis_path.write_text(
+            f"# Daily Analysis — {today}\n\n"
+            + daily_content
+            + "\n\n---\n\n"
+            + f"## Signals\n\n```\n{signals_report}\n```\n\n"
+            + f"## Full Summary\n\n```\n{report}\n```\n"
+        )
+        log(f"Daily analysis written to {analysis_path}")
 
-    if has_new_data or not housing_path.exists():
-        log("Generating housing analysis...")
-        try:
-            housing_md = generate_housing_analysis(cfg)
-            housing_path.write_text(f"# Housing Analysis — {today}\n\n{housing_md}\n")
-            log(f"Housing analysis saved to {housing_path}")
-        except Exception as e:
-            log(f"Housing analysis failed: {e}")
-    else:
-        log("Housing analysis: no new data this run — keeping existing.")
+    housing_content = _load_or_save_analysis(
+        "housing",
+        lambda: generate_housing_analysis(cfg),
+    )
+    if housing_content:
+        housing_path.write_text(
+            f"# Housing Analysis — {today}\n\n{housing_content}\n"
+        )
+        log(f"Housing analysis written to {housing_path}")
 
     log("Generating editorial briefing...")
     try:

@@ -136,3 +136,15 @@ CREATE TABLE IF NOT EXISTS series_release (
 );
 CREATE INDEX IF NOT EXISTS series_release_release_idx
     ON series_release (release_id);
+
+-- Daily/housing analyses are LLM-generated and live in summaries/, which is
+-- gitignored — so Fly's fresh-clone runtime can't see prior generations.
+-- Persisting them in the DB lets quiet-run firings (no new data) reuse the
+-- previously generated analysis without paying for an LLM call.
+CREATE TABLE IF NOT EXISTS daily_analyses (
+    date_key     DATE        NOT NULL,
+    kind         TEXT        NOT NULL,  -- 'daily' or 'housing'
+    content      TEXT        NOT NULL,
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (date_key, kind)
+);
