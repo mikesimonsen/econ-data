@@ -24,9 +24,9 @@
   "mortgage-intent": "2026-05-04T21:10:12",
   "consumer-confidence": "2026-04-28T19:58:46",
   "mba-applications": "2026-04-29T17:08:35",
-  "oil": "2026-05-04T21:10:12",
+  "oil": "2026-05-05T12:02:20",
   "mortgage-spread": "2026-05-04T21:10:12",
-  "sp500": "2026-05-04T21:10:12",
+  "sp500": "2026-05-05T12:02:20",
   "labor-headlines": "2026-05-01T20:53:45",
   "labor-detail": "2026-05-01T20:53:45",
   "wage-growth": "2026-04-11T09:08:40",
@@ -36,5 +36,6 @@
   "altos-inventory": "2026-05-02T08:18:19",
   "altos-new-listings": "2026-05-02T08:18:19",
   "altos-new-pending": "2026-05-02T08:18:19",
-  "fed-funds": "2026-05-02T08:18:19"
+  "fed-funds": "2026-05-02T08:18:19",
+  "inflation-expectations": "2026-05-05T12:02:20"
 }
