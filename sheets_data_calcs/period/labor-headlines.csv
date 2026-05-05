@@ -1,4 +1,4 @@
-date,Unemployment Rate Period Chg,U-6 + Part-Time for Economic Reasons Period Chg,Total Nonfarm Payrolls (000s) Period Chg,CPS Employment Level (000s) Period Chg,Average Hourly Earnings - All Employees Period Chg,Job Openings: Total Nonfarm Period Chg,Hires Rate Period Chg,Quits Rate Period Chg,Initial Claims Period Chg,Initial Claims - 4 Week Average Period Chg,Unemployed 27+ Weeks (000s) Period Chg,Median Duration of Unemployment (Weeks) Period Chg
+date,Unemployment Rate Period Chg,U-6 + Part-Time for Economic Reasons Period Chg,Total Nonfarm Payrolls (000s) Period Chg,CPS Employment Level (000s) Period Chg,Average Hourly Earnings (Total Private) Period Chg,Job Openings: Total Nonfarm Period Chg,Hires Rate Period Chg,Quits Rate Period Chg,Initial Claims Period Chg,Initial Claims - 4 Week Average Period Chg,Unemployed 27+ Weeks (000s) Period Chg,Median Duration of Unemployment (Weeks) Period Chg
 1939-02-01,,,0.59,,,,,,,,,
 1939-03-01,,,0.6,,,,,,,,,
 1939-04-01,,,-0.61,,,,,,,,,
@@ -4023,12 +4023,12 @@ date,Unemployment Rate Period Chg,U-6 + Part-Time for Economic Reasons Period Ch
 2026-01-17,,,,,,,,,4.48,-0.61,,
 2026-01-24,,,,,,,,,0.48,0.97,,
 2026-01-31,,,,,,,,,9.0,2.77,,
-2026-02-01,0.1,-0.2,-0.08,-0.11,0.38,-4.94,-0.3,-0.1,,,4.74,0.91
+2026-02-01,0.1,-0.2,-0.08,-0.11,0.38,-4.39,-0.3,-0.1,,,4.74,0.91
 2026-02-07,,,,,,,,,0.0,3.4,,
 2026-02-14,,,,,,,,,-9.57,-0.23,,
 2026-02-21,,,,,,,,,1.44,0.0,,
 2026-02-28,,,,,,,,,1.42,-1.82,,
-2026-03-01,-0.1,0.1,0.11,-0.04,0.24,,,,,,-4.11,3.6
+2026-03-01,-0.1,0.1,0.11,-0.04,0.24,-0.81,0.4,0.1,,,-4.11,3.6
 2026-03-07,,,,,,,,,-0.47,-1.97,,
 2026-03-14,,,,,,,,,-3.76,-0.35,,
 2026-03-21,,,,,,,,,2.93,0.0,,

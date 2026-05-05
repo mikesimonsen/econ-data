@@ -1,4 +1,4 @@
-date,Unemployment Rate,U-6 + Part-Time for Economic Reasons,Total Nonfarm Payrolls (000s),CPS Employment Level (000s),Average Hourly Earnings - All Employees,Job Openings: Total Nonfarm,Hires Rate,Quits Rate,Initial Claims,Initial Claims - 4 Week Average,Unemployed 27+ Weeks (000s),Median Duration of Unemployment (Weeks)
+date,Unemployment Rate,U-6 + Part-Time for Economic Reasons,Total Nonfarm Payrolls (000s),CPS Employment Level (000s),Average Hourly Earnings (Total Private),Job Openings: Total Nonfarm,Hires Rate,Quits Rate,Initial Claims,Initial Claims - 4 Week Average,Unemployed 27+ Weeks (000s),Median Duration of Unemployment (Weeks)
 1939-01-01,,,29923.0,,,,,,,,,
 1939-02-01,,,30100.0,,,,,,,,,
 1939-03-01,,,30280.0,,,,,,,,,
@@ -4025,12 +4025,12 @@ date,Unemployment Rate,U-6 + Part-Time for Economic Reasons,Total Nonfarm Payrol
 2026-01-17,,,,,,,,,210000.0,205250.0,,
 2026-01-24,,,,,,,,,211000.0,207250.0,,
 2026-01-31,,,,,,,,,230000.0,213000.0,,
-2026-02-01,4.4,7.9,158459.0,162912.0,37.29,6882.0,3.1,1.9,,,1899.0,11.1
+2026-02-01,4.4,7.9,158459.0,162912.0,37.29,6922.0,3.1,1.9,,,1899.0,11.1
 2026-02-07,,,,,,,,,230000.0,220250.0,,
 2026-02-14,,,,,,,,,208000.0,219750.0,,
 2026-02-21,,,,,,,,,211000.0,219750.0,,
 2026-02-28,,,,,,,,,214000.0,215750.0,,
-2026-03-01,4.3,8.0,158637.0,162848.0,37.38,,,,,,1821.0,11.5
+2026-03-01,4.3,8.0,158637.0,162848.0,37.38,6866.0,3.5,2.0,,,1821.0,11.5
 2026-03-07,,,,,,,,,213000.0,211500.0,,
 2026-03-14,,,,,,,,,205000.0,210750.0,,
 2026-03-21,,,,,,,,,211000.0,210750.0,,
