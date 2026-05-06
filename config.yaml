@@ -542,6 +542,26 @@ groups:
       - id: REDFIN_INVENTORY_SA
         name: "Active Inventory SA (Redfin)"
 
+  zillow:
+    name: "Zillow Monthly Market Report"
+    source: zillow
+    cadence:
+      frequency: monthly
+      rule: "around-15"      # Zillow refreshes public CSVs mid-month
+      release_time_et: "12:00"
+      grace_days: 7
+    series:
+      - id: ZILLOW_ZHVI
+        name: "Typical Home Value (Zillow ZHVI, SA)"
+        units: dollars
+      - id: ZILLOW_ZORI
+        name: "Typical Rent (Zillow ZORI)"
+        units: dollars
+      - id: ZILLOW_INVENTORY
+        name: "For-Sale Inventory (Zillow)"
+      - id: ZILLOW_SALES_NOWCAST
+        name: "Sales Count Nowcast (Zillow)"
+
   housing-starts:
     name: "Housing Starts (Census, SAAR)"
     series:

@@ -32,6 +32,7 @@ from econ_data.fetch_mnd import fetch_mnd
 from econ_data.fetch_nar import fetch_nar
 from econ_data.fetch_realtor import fetch_realtor
 from econ_data.fetch_redfin import fetch_redfin
+from econ_data.fetch_zillow import fetch_zillow
 from econ_data.fetch_web import fetch_web
 from econ_data.fetch_xactus import fetch_xactus
 from econ_data.housing_analysis import generate_housing_analysis
@@ -203,6 +204,13 @@ def fetch_morning(cfg: dict, last_dates: dict, last_checked: dict) -> tuple[dict
         save(redfin["new"])
         _mark_captured(redfin["new"], result["captured_advanced"])
     _merge(result, redfin)
+
+    log("Fetching Zillow monthly market data...")
+    zillow = fetch_zillow(last_dates=last_dates)
+    if zillow["new"]:
+        save(zillow["new"])
+        _mark_captured(zillow["new"], result["captured_advanced"])
+    _merge(result, zillow)
 
     log("Computing mortgage rate spread...")
     spread = compute_spread(last_dates=get_last_dates())
