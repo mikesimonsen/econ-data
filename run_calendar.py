@@ -51,4 +51,24 @@ if __name__ == "__main__":
         n_syn = rs.synthesize_from_history(orphans)
         log(f"  → {n_syn} synthesized schedule rows")
 
+    # Refresh consensus-release calendar (web-discovered upcoming agency dates)
+    # and CME FedWatch probabilities for the next 6 FOMC meetings. Wrapped so a
+    # failure here doesn't poison the FRED schedule refresh above. Briefing
+    # picks up the new probabilities on the next morning-cohort run.
+    log("Refreshing consensus release calendar...")
+    try:
+        from econ_data.expectations import refresh_release_calendar
+        n_cal = refresh_release_calendar()
+        log(f"  → {n_cal} calendar entries updated")
+    except Exception as e:
+        log(f"  → FAILED: {e}")
+
+    log("Refreshing CME FedWatch probabilities...")
+    try:
+        from econ_data.fed_expectations import fetch_all_upcoming
+        n_fed = fetch_all_upcoming(limit=6)
+        log(f"  → {n_fed} FOMC meetings updated")
+    except Exception as e:
+        log(f"  → FAILED: {e}")
+
     log("Done.")
