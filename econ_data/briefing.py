@@ -79,6 +79,7 @@ _GROUP_SEARCH_TAGS = {
     "realtor-dot-com": "housing inventory listings pending price realtor",
     "realtor-dot-com-extra": "housing pending ratio price reduced realtor",
     "redfin": "housing pending sold listings inventory price redfin",
+    "zillow": "housing home value price rent inventory sales nowcast zillow zhvi zori",
 }
 
 _FAVICON_CACHE = None
@@ -1315,6 +1316,7 @@ _HOUSING_COMPARISONS = [
             ("ACTLISCOUUS", "Realtor.com"),
             ("REDFIN_INVENTORY", "Redfin"),
             ("HOSINVUSM495N", "NAR"),
+            ("ZILLOW_INVENTORY", "Zillow"),
         ],
     },
     {
@@ -1341,6 +1343,17 @@ _HOUSING_COMPARISONS = [
         "series": [
             ("REDFIN_SOLD", "Redfin"),
             ("EXHOSLUSM495S", "NAR (SA)"),
+            ("ZILLOW_SALES_NOWCAST", "Zillow (nowcast)"),
+        ],
+    },
+    {
+        "title": "Home Prices — YoY % Change",
+        "chart_type": "yoy",
+        "series": [
+            ("CSUSHPISA", "Case-Shiller National (SA)"),
+            ("ZILLOW_ZHVI", "Zillow ZHVI (SA)"),
+            ("REDFIN_MEDIAN_PRICE", "Redfin median sale"),
+            ("MEDLISPRIUS", "Realtor.com median list"),
         ],
     },
 ]
