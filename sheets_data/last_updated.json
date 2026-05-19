@@ -42,5 +42,7 @@
   "income": "2026-05-08T16:07:14",
   "affordability": "2026-05-11T21:17:50",
   "zillow": "2026-05-16T15:40:59",
-  "inflation-expectations-survey": "2026-05-17T15:37:47"
+  "inflation-expectations-survey": "2026-05-17T15:37:47",
+  "sp500-eps-trailing": "2026-05-09T14:30:37",
+  "sp500-eps-forward": "2026-05-09T14:30:37"
 }

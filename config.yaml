@@ -123,6 +123,9 @@ groups:
         name: "PCE Price Index"
       - id: PCEPILFE
         name: "Core PCE (Less Food & Energy)"
+      - id: PCETRIM12M159SFRBDAL
+        name: "Trimmed-Mean PCE (12-mo % chg, Dallas Fed)"
+        units: percent
 
   inflation-expectations:
     name: "Inflation Expectations - Market-Based (Treasury Breakevens)"
@@ -247,6 +250,17 @@ groups:
         name: "Output Per Hour - Nonfarm Business"
       - id: PRS85006092
         name: "Unit Labor Costs - Nonfarm Business"
+
+  corporate-profits:
+    name: "Corporate Profits (BEA NIPA, Quarterly)"
+    signals: minimal
+    series:
+      - id: CPROFIT
+        name: "Corporate Profits with IVA & CCAdj (Pre-Tax)"
+      - id: CPATAX
+        name: "Corporate Profits After Tax with IVA & CCAdj"
+      - id: NFCPATAX
+        name: "Nonfinancial Corporate Profits After Tax"
 
   labor-detail:
     name: "Labor Market Detail"
@@ -700,6 +714,41 @@ groups:
     series:
       - id: SP500
         name: "S&P 500 Index"
+
+  sp500-eps-trailing:
+    name: "S&P 500 Earnings (Trailing 12M, Reported GAAP - Multpl)"
+    source: web
+    cadence:
+      frequency: monthly
+      rule: "around-15"      # Multpl typically refreshes mid-month after S&P
+      release_time_et: "18:00"
+      grace_days: 14
+    signals: minimal
+    series:
+      - id: SP500_EARNINGS_TTM
+        name: "S&P 500 Reported Earnings (TTM, $/share)"
+        units: dollars per share
+
+  sp500-eps-forward:
+    name: "S&P 500 Forward Earnings Outlook (FactSet Earnings Insight, Weekly)"
+    source: factset
+    cadence:
+      frequency: weekly
+      rule: "friday"
+      release_time_et: "17:00"
+      grace_days: 4
+    signals: minimal
+    series:
+      - id: FACTSET_FWD_PE_12M
+        name: "S&P 500 Forward 12M P/E Ratio"
+      - id: FACTSET_TTM_PE_12M
+        name: "S&P 500 Trailing 12M P/E Ratio"
+      - id: FACTSET_CY_EARNINGS_GROWTH
+        name: "S&P 500 Current Year Earnings Growth Estimate"
+        units: percent
+      - id: FACTSET_NEXT_Q_EARNINGS_GROWTH
+        name: "S&P 500 Next-Quarter Earnings Growth Estimate"
+        units: percent
 
   oil:
     name: "Oil Prices (Daily)"

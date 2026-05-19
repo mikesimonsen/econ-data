@@ -132,6 +132,34 @@ def _forward_fill_weekdays(data: list) -> list:
     return filled
 
 
+def _scrape_multpl_sp500_earnings() -> list:
+    """Scrape S&P 500 trailing 12-month reported (GAAP) earnings from multpl.com.
+
+    Multpl publishes one row per month back to 1871. First run pulls full
+    history; subsequent runs return all rows and the framework filters to new.
+    """
+    soup = _get_soup("https://www.multpl.com/s-p-500-earnings/table/by-month")
+    table = soup.find("table", id="datatable") or soup.find("table")
+    if table is None:
+        raise ValueError("No data table found on multpl.com earnings page")
+
+    results = []
+    for row in table.find_all("tr")[1:]:  # skip header
+        cells = [c.get_text(strip=True) for c in row.find_all(["th", "td"])]
+        if len(cells) < 2:
+            continue
+        try:
+            obs_date = datetime.strptime(cells[0], "%b %d, %Y").date()
+            value = float(cells[1].replace(",", "").replace("$", ""))
+        except ValueError:
+            continue
+        results.append((obs_date, value))
+
+    if not results:
+        raise ValueError("multpl.com earnings table parsed to zero rows")
+    return results
+
+
 def _scrape_yahoo(symbol: str, range: str) -> list:
     """Fetch daily close from Yahoo Finance chart API."""
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
@@ -228,14 +256,17 @@ SCRAPERS = {
     "WTI_CRUDE": (_scrape_wti_crude, "WTI Crude Oil Futures"),
     "DGS10": (_scrape_dgs10, "10-Year Treasury Yield"),
     "SP500": (_scrape_sp500, "S&P 500 Index"),
+    "SP500_EARNINGS_TTM": (_scrape_multpl_sp500_earnings,
+                           "S&P 500 Reported Earnings (TTM, $/share)"),
 }
 
 # Cooldown: days to wait after last observation before scraping again
 COOLDOWN = {
-    "MBA_PURCHASE": 5,   # weekly, check a few days after last reading
-    "WTI_CRUDE": 0,      # daily, always check
-    "DGS10": 0,          # daily, always check
-    "SP500": 0,          # daily, always check
+    "MBA_PURCHASE": 5,         # weekly, check a few days after last reading
+    "WTI_CRUDE": 0,            # daily, always check
+    "DGS10": 0,                # daily, always check
+    "SP500": 0,                # daily, always check
+    "SP500_EARNINGS_TTM": 20,  # monthly; mid-month refresh after S&P updates
 }
 
 DEFAULT_COOLDOWN = 7

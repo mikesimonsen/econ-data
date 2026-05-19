@@ -28,6 +28,7 @@ from econ_data.fetch import fetch_all
 from econ_data.fetch_altos import fetch_altos
 from econ_data.fetch_bls import build_series_map, fetch_bls
 from econ_data.fetch_confboard import fetch_confboard
+from econ_data.fetch_factset import fetch_factset
 from econ_data.fetch_mnd import fetch_mnd
 from econ_data.fetch_nar import fetch_nar
 from econ_data.fetch_realtor import fetch_realtor
@@ -183,6 +184,13 @@ def fetch_morning(cfg: dict, last_dates: dict, last_checked: dict) -> tuple[dict
         save(web["new"])
         _mark_captured(web["new"], result["captured_advanced"])
     _merge(result, web)
+
+    log("Fetching FactSet Earnings Insight (forward EPS, weekly)...")
+    factset = fetch_factset(last_dates=last_dates)
+    if factset["new"]:
+        save(factset["new"])
+        _mark_captured(factset["new"], result["captured_advanced"])
+    _merge(result, factset)
 
     log("Fetching Conference Board confidence...")
     cb = fetch_confboard(last_dates=last_dates)

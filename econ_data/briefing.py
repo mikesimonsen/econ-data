@@ -1641,11 +1641,12 @@ _INFLATION_COMPARISONS = [
         ],
     },
     {
-        "title": "Core Inflation: Core CPI vs Core PCE — YoY %",
-        "chart_type": "yoy",
+        "title": "Core Inflation: Core CPI vs Core PCE vs Trimmed-Mean PCE — YoY %",
+        "chart_type": "mixed",
         "series": [
-            ("CPILFESL", "Core CPI"),
-            ("PCEPILFE", "Core PCE"),
+            ("CPILFESL", "Core CPI", "yoy"),
+            ("PCEPILFE", "Core PCE", "yoy"),
+            ("PCETRIM12M159SFRBDAL", "Trimmed-Mean PCE (Dallas Fed)", "raw"),
         ],
     },
     {
@@ -1675,13 +1676,14 @@ _INFLATION_COMPARISONS = [
         ],
     },
     {
-        "title": "Realized YoY: CPI vs PCE vs Core",
-        "chart_type": "yoy",
+        "title": "Realized YoY: CPI vs PCE vs Core vs Trimmed-Mean",
+        "chart_type": "mixed",
         "series": [
-            ("CPIAUCSL", "CPI"),
-            ("CPILFESL", "Core CPI"),
-            ("PCEPI", "PCE"),
-            ("PCEPILFE", "Core PCE"),
+            ("CPIAUCSL", "CPI", "yoy"),
+            ("CPILFESL", "Core CPI", "yoy"),
+            ("PCEPI", "PCE", "yoy"),
+            ("PCEPILFE", "Core PCE", "yoy"),
+            ("PCETRIM12M159SFRBDAL", "Trimmed-Mean PCE", "raw"),
         ],
     },
 ]
@@ -1696,8 +1698,14 @@ def _render_inflation_charts(ctx: dict) -> str:
 
     for idx, comp in enumerate(_INFLATION_COMPARISONS):
         series_data = []
-        for i, (sid, label) in enumerate(comp["series"]):
-            pts = _housing_chart_data(sid, comp["chart_type"], since, db_path)
+        chart_type = comp["chart_type"]
+        for i, entry in enumerate(comp["series"]):
+            if chart_type == "mixed":
+                sid, label, per_series_type = entry
+            else:
+                sid, label = entry
+                per_series_type = chart_type
+            pts = _housing_chart_data(sid, per_series_type, since, db_path)
             if pts:
                 color = _HOUSING_CHART_COLORS[i % len(_HOUSING_CHART_COLORS)]
                 series_data.append((label, color, pts))
@@ -1705,7 +1713,7 @@ def _render_inflation_charts(ctx: dict) -> str:
         if not series_data:
             continue
 
-        is_yoy = comp["chart_type"] == "yoy"
+        is_yoy = chart_type == "yoy" or chart_type == "mixed"
         chart_id = f"infl-chart-{idx}"
         svg = _multi_series_chart_svg(
             series_data, comp["title"], is_yoy, chart_id=chart_id,
