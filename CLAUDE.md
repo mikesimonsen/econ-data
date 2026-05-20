@@ -129,3 +129,9 @@ python summary.py --signals
 # Run tests
 pytest
 ```
+
+## Working agreements
+
+- **Auto-commit and push.** When you (Claude) create or edit tracked files in this repo as part of completing a task, commit and push the result without asking. The user does not want to be the gatekeeper for tracking work. Exceptions: anything that touches secrets/credentials, force-pushes, destructive operations, or changes the user explicitly marks as WIP — still confirm those.
+- **Tracked output locations.** Long-lived outputs go in tracked directories so they survive `.gitignore`. Use `monthly_summaries/` for monthly summary drafts (one file per send, named `<topic>-YYYY-MM.md`). The legacy `summaries/` directory is gitignored and only for ephemeral per-run pipeline output.
+- **Prompts as source of truth.** Prompt files in `prompts/` are the editable instructions for each recurring deliverable. When a deliverable's voice, structure, or emphasis needs to change, edit the prompt — don't just one-shot the output differently. The prompt should improve over time.
