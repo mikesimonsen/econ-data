@@ -582,6 +582,8 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
     analysis_md = _load_analysis(today)
     from econ_data.housing_analysis import load_housing_analysis
     housing_md = load_housing_analysis(today)
+    from econ_data.monthly_housing_summary import load_monthly_summary
+    monthly_housing_md = load_monthly_summary(today)
     name_map = _build_name_map(summary)
 
     from econ_data.expectations import get_upcoming_releases
@@ -628,11 +630,15 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
             recent_series.append((gid, gname, a))
 
     housing_html = _md_to_html(housing_md, name_map) if housing_md else ""
+    monthly_housing_html = (
+        _md_to_html(monthly_housing_md, name_map) if monthly_housing_md else ""
+    )
 
     html = _render_page(
         today=today,
         analysis_html=_md_to_html(analysis_md, name_map) if analysis_md else "",
         housing_html=housing_html,
+        monthly_housing_html=monthly_housing_html,
         upcoming_releases=upcoming_releases,
         schedule_status=schedule_status,
         fed_chart_html=fed_chart_html,
@@ -659,6 +665,7 @@ def _render_page(**ctx) -> str:
     # Build sections — today_html must render first (it populates chart_csv_data)
     analysis_html = ctx.get("analysis_html", "")
     housing_html = ctx.get("housing_html", "")
+    monthly_housing_html = ctx.get("monthly_housing_html", "")
     housing_charts_html = _render_housing_charts(ctx)
     inflation_charts_html = _render_inflation_charts(ctx)
     employment_charts_html = _render_employment_charts(ctx)
@@ -719,6 +726,7 @@ def _render_page(**ctx) -> str:
   </section>
 
   <section id="housing" class="tab-content">
+    {f'<div class="analysis-block monthly-summary">{monthly_housing_html}</div>' if monthly_housing_html else ''}
     {housing_charts_html}
     {f'<div class="analysis-block">{housing_html}</div>' if housing_html else '<p class="muted">Housing analysis not yet generated. Run the pipeline to generate.</p>'}
   </section>
@@ -2342,6 +2350,14 @@ main { padding: 24px 32px; max-width: 1400px; }
   padding: 20px 24px;
   margin-bottom: 32px;
   line-height: 1.7;
+}
+.analysis-block.monthly-summary {
+  border-left: 3px solid var(--accent);
+}
+.analysis-block.monthly-summary h2.analysis-h {
+  font-size: 18px;
+  color: var(--text);
+  margin-bottom: 16px;
 }
 .analysis-h {
   font-size: 14px;

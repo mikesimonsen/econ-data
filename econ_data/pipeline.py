@@ -37,6 +37,9 @@ from econ_data.fetch_zillow import fetch_zillow
 from econ_data.fetch_web import fetch_web
 from econ_data.fetch_xactus import fetch_xactus
 from econ_data.housing_analysis import generate_housing_analysis
+from econ_data.monthly_housing_summary import (
+    generate_monthly_summary, write_monthly_summary,
+)
 from econ_data.store import (
     detect_and_save_revisions, get_failed_series, get_last_dates,
     get_recent_revisions, get_series_captured_today, save, save_fetch_log,
@@ -421,6 +424,33 @@ def post_process(cfg: dict, series: list, result: dict, revisions: list) -> None
         )
         return content
 
+    def _load_or_save_monthly_analysis(kind: str, generator) -> str | None:
+        """Same as _load_or_save_analysis but keyed by first-of-month, so
+        there is one row per (month, kind). Within a month, regenerates
+        only when new data arrives; subsequent runs reuse from DB."""
+        existing = _con.execute(
+            "SELECT content FROM daily_analyses "
+            "WHERE date_key = DATE_TRUNC('month', CURRENT_DATE)::date AND kind = %s",
+            (kind,),
+        ).fetchone()
+        if existing and not has_new_data:
+            log(f"{kind.capitalize()} (monthly): no new data this run — reusing from DB.")
+            return existing[0]
+        log(f"Generating {kind} (monthly)...")
+        try:
+            content = generator()
+        except Exception as e:
+            log(f"{kind.capitalize()} (monthly) failed: {e}")
+            return existing[0] if existing else None
+        _con.execute(
+            "INSERT INTO daily_analyses (date_key, kind, content, generated_at) "
+            "VALUES (DATE_TRUNC('month', CURRENT_DATE)::date, %s, %s, NOW()) "
+            "ON CONFLICT (date_key, kind) DO UPDATE SET "
+            "content = EXCLUDED.content, generated_at = EXCLUDED.generated_at",
+            (kind, content),
+        )
+        return content
+
     # has_new_data fires only when at least one observation actually advanced
     # the release_schedule (PENDING/OVERDUE → CAPTURED). result["new"] alone
     # over-fires: it includes (a) derived series that recompute every run
@@ -458,6 +488,14 @@ def post_process(cfg: dict, series: list, result: dict, revisions: list) -> None
             f"# Housing Analysis — {today}\n\n{housing_content}\n"
         )
         log(f"Housing analysis written to {housing_path}")
+
+    monthly_content = _load_or_save_monthly_analysis(
+        "monthly_housing",
+        lambda: generate_monthly_summary(cfg, today),
+    )
+    if monthly_content:
+        monthly_path = write_monthly_summary(today, monthly_content)
+        log(f"Monthly housing summary written to {monthly_path}")
 
     log("Generating editorial briefing...")
     try:
