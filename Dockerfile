@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir \
     "fredapi>=0.5" \
     "openpyxl>=3.1" \
     "psycopg[binary]>=3.2" \
+    "pypdf>=5" \
     "python-dotenv>=1.0" \
     "pyyaml>=6.0" \
     "requests>=2.31"
