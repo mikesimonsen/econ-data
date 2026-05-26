@@ -98,12 +98,15 @@ def fetch_altos(last_dates: dict = None) -> dict:
     if not IMPORT_DIR.exists():
         return {"new": all_new, "counts": counts}
 
-    files = sorted(IMPORT_DIR.glob("altos_trends_national_*.csv"))
+    files = list(IMPORT_DIR.glob("altos_trends_national_*.csv"))
     if not files:
         return {"new": all_new, "counts": counts}
 
-    # Each file contains the full history — use the latest one
-    fpath = files[-1]
+    # Each file contains the full history — use the most recently downloaded
+    # one. Sorting lexicographically isn't reliable: browser-counter naming
+    # (e.g. "(1).csv" after "(41).csv") and resets break the order, so the
+    # filename can lie about recency. mtime reflects the actual drop.
+    fpath = max(files, key=lambda p: p.stat().st_mtime)
 
     try:
         rows = _read_csv(fpath)
