@@ -134,6 +134,15 @@ def _read_csv(fpath: Path) -> list[dict]:
         return list(reader)
 
 
+def _parse_date(raw: str) -> date:
+    """Parse an Altos date cell. Exports have shipped both ISO (2026-05-29)
+    and US short (5/29/26) formats, so accept either."""
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return datetime.strptime(raw, "%m/%d/%y").date()
+
+
 def _build_series(
     rows: list[dict],
     series_id: str,
@@ -209,7 +218,7 @@ def _aggregate(rows: list[dict], spec: dict) -> dict[date, float]:
             val = row.get(col)
             if val is None or val == "":
                 continue
-            obs_date = date.fromisoformat(row["date"])
+            obs_date = _parse_date(row["date"])
             date_totals[obs_date] += float(val)
 
     return date_totals
@@ -236,7 +245,7 @@ def _weighted_avg(rows: list[dict], spec: dict) -> dict[date, float]:
             wt = row.get(weight_col)
             if not val or not wt or val == "" or wt == "":
                 continue
-            obs_date = date.fromisoformat(row["date"])
+            obs_date = _parse_date(row["date"])
             v, w = float(val), float(wt)
             date_num[obs_date] += v * w
             date_den[obs_date] += w
