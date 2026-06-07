@@ -254,6 +254,22 @@ def _format_change(val, is_pct=False):
     return f"{sign}{val:.2f}{unit}"
 
 
+def _format_period_change(a: dict, is_pct=False) -> str:
+    """Format the period-change cell for a series row.
+
+    Diff-flagged series (e.g. PAYEMS) lead with the level change in the
+    series' own units — '+172 (+0.11%)' — since that's how the release
+    is discussed. Everything else shows the % (or pp) change.
+    """
+    diff = a.get("period_diff")
+    if diff is None:
+        return _format_change(a["period_pct"], is_pct)
+    sign = "+" if diff > 0 else ""
+    level = f"{sign}{diff:,.0f}" if abs(diff) >= 10 else f"{sign}{diff:.2f}"
+    pct = _format_change(a["period_pct"], is_pct)
+    return f"{level} <span class=\"muted\">({pct})</span>"
+
+
 def _signal_class(signal: str) -> str:
     """Map a signal string to a CSS class."""
     s = signal.lower()
@@ -896,7 +912,7 @@ def _render_series_table(series_list, ctx, show_signals=True) -> str:
               <td class="spark-col">{spark}</td>
               <td class="date-col">{date_str}</td>
               <td class="val-col">{_format_val(a['latest_value'], is_pct)}</td>
-              <td class="chg-col">{_trend_arrow(a)} {_format_change(a['period_pct'], is_pct)}</td>
+              <td class="chg-col">{_trend_arrow(a)} {_format_period_change(a, is_pct)}</td>
               <td class="chg-col">{_format_change(a['yoy_pct'], is_pct)}</td>
               <td class="release-col">{released}</td>
               <td class="signal-col">{rev_tag}{signal_tags}</td>
@@ -2169,7 +2185,7 @@ def _render_all_groups(ctx) -> str:
               <td class="spark-col">{spark}</td>
               <td class="date-col">{date_str}</td>
               <td class="val-col">{_format_val(a['latest_value'], is_pct)}</td>
-              <td class="chg-col">{_trend_arrow(a)} {_format_change(a['period_pct'], is_pct)}</td>
+              <td class="chg-col">{_trend_arrow(a)} {_format_period_change(a, is_pct)}</td>
               <td class="chg-col">{_format_change(a['yoy_pct'], is_pct)}</td>
               <td class="release-col">{released}</td>
               <td class="signal-col">{signal_tags} {trend}</td>

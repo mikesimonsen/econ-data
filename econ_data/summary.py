@@ -4,7 +4,7 @@ Analyze latest data for trend direction, reversals, and unusual moves.
 import statistics
 from pathlib import Path
 
-from econ_data.config import (load as load_config, percent_series,
+from econ_data.config import (load as load_config, diff_series, percent_series,
                               seasonal_series, minimal_signal_series)
 from econ_data.db import connect
 from econ_data.seasonal import compute_seasonal_factors, sa_period_changes
@@ -12,6 +12,7 @@ from econ_data.store import DB_PATH
 
 # Cached config lookups
 _PERCENT_IDS = None
+_DIFF_IDS = None
 _SEASONAL_IDS = None
 _MINIMAL_IDS = None
 
@@ -21,6 +22,13 @@ def _get_percent_ids():
     if _PERCENT_IDS is None:
         _PERCENT_IDS = percent_series(load_config())
     return _PERCENT_IDS
+
+
+def _get_diff_ids():
+    global _DIFF_IDS
+    if _DIFF_IDS is None:
+        _DIFF_IDS = diff_series(load_config())
+    return _DIFF_IDS
 
 
 def _get_seasonal_ids():
@@ -83,6 +91,14 @@ def _get_series_data(series_id: str, db_path: Path = DB_PATH) -> dict:
         (series_id, yoy_type),
     ).fetchall())
 
+    # Level change for diff-flagged series (e.g. monthly jobs added for PAYEMS)
+    period_diff = {}
+    if series_id in _get_diff_ids():
+        period_diff = dict(con.execute(
+            "SELECT date::text, value FROM calculated WHERE series_id = %s AND calc_type = 'period_diff' ORDER BY date",
+            (series_id,),
+        ).fetchall())
+
     # Get captured_at for the latest observation
     captured_at = None
     if rows:
@@ -94,6 +110,7 @@ def _get_series_data(series_id: str, db_path: Path = DB_PATH) -> dict:
             captured_at = row[0][:10]  # date portion only
 
     return {"rows": rows, "period_pct": period_pct, "yoy_pct": yoy_pct,
+            "period_diff": period_diff,
             "is_percent": is_pct, "captured_at": captured_at}
 
 
@@ -111,7 +128,7 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
             "series_id": series_id, "name": name,
             "latest_date": rows[-1][0] if rows else None,
             "latest_value": rows[-1][1] if rows else None,
-            "period_pct": None, "yoy_pct": None,
+            "period_pct": None, "yoy_pct": None, "period_diff": None,
             "trend_dir": None, "trend_periods": 0,
             "frequency": "monthly",
             "signals": [],
@@ -336,6 +353,7 @@ def analyze_series(series_id: str, name: str, db_path: Path = DB_PATH) -> dict:
         "latest_value": latest_value,
         "period_pct": period,
         "yoy_pct": yoy,
+        "period_diff": data["period_diff"].get(latest_date),
         "trend_dir": trend_dir,
         "trend_periods": trend_periods,
         "frequency": freq,
