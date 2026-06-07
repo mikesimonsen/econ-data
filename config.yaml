@@ -179,6 +179,7 @@ groups:
         inverted: true
       - id: PAYEMS
         name: "Total Nonfarm Payrolls (000s)"
+        diff: true  # also compute period_diff (monthly jobs added, 000s)
       - id: CE16OV
         name: "CPS Employment Level (000s)"
       - id: CES0500000003

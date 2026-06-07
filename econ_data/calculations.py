@@ -6,6 +6,8 @@ Calculation types:
   yoy_pct   — percentage change from ~1 year earlier (for level series)
   period_pp  — percentage-point difference from the prior observation (for percent/rate series)
   yoy_pp     — percentage-point difference from ~1 year earlier (for percent/rate series)
+  period_diff — absolute difference from the prior observation (for level series
+                flagged diff: true in config, e.g. monthly jobs added for PAYEMS)
 
 YoY matching is frequency-agnostic: for each observation, we find the
 nearest observation to the date exactly one year prior.  A tolerance of
@@ -16,7 +18,7 @@ import bisect
 from datetime import date as date_type, timedelta
 from pathlib import Path
 
-from econ_data.config import load, percent_series
+from econ_data.config import diff_series, load, percent_series
 from econ_data.db import connect
 from econ_data.store import DB_PATH
 
@@ -33,6 +35,7 @@ def compute_all(db_path: Path = DB_PATH) -> int:
 
     cfg = load()
     pct_ids = percent_series(cfg)
+    diff_ids = diff_series(cfg)
 
     series_ids = [r[0] for r in con.execute(
         "SELECT DISTINCT series_id FROM observations ORDER BY series_id"
@@ -54,6 +57,8 @@ def compute_all(db_path: Path = DB_PATH) -> int:
             else:
                 total += _compute_period_pct(con, series_id, rows)
                 total += _compute_yoy_pct(con, series_id, rows)
+                if series_id in diff_ids:
+                    total += _compute_period_diff(con, series_id, rows)
 
     return total
 
@@ -124,6 +129,20 @@ def _compute_yoy_pct(con, series_id, rows):
         if prev_val is not None and prev_val != 0:
             pct = (value - prev_val) / prev_val * 100
             calcs.append((series_id, "yoy_pct", date_str, round(pct, 2)))
+
+    with con.cursor() as cur:
+        cur.executemany(UPSERT_SQL, calcs)
+    return len(calcs)
+
+
+def _compute_period_diff(con, series_id, rows):
+    """Absolute difference from prior observation (level change, same units as the series)."""
+    calcs = []
+    for i in range(1, len(rows)):
+        prev_val = rows[i - 1][1]
+        cur_date, cur_val = rows[i]
+        diff = cur_val - prev_val
+        calcs.append((series_id, "period_diff", cur_date, round(diff, 2)))
 
     with con.cursor() as cur:
         cur.executemany(UPSERT_SQL, calcs)

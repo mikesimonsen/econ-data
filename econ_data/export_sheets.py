@@ -11,7 +11,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from econ_data.config import load as load_config, percent_series
+from econ_data.config import diff_series, load as load_config, percent_series
 from econ_data.db import connect
 from econ_data.store import DB_PATH
 
@@ -77,12 +77,14 @@ def _export_group(group_id: str, series_ids: list, output_dir: Path,
 
 
 def _export_group_unified(group_id: str, series_ids: list, output_dir: Path,
-                          calc_family: str, pct_ids: set,
+                          calc_family: str, pct_ids: set, diff_ids: set = frozenset(),
                           suffix: str = "", db_path: Path = DB_PATH) -> Path:
     """Export a group as a wide-format CSV, picking the right calc type per series.
 
     calc_family: "period" or "yoy" — resolves to period_pct/period_pp or yoy_pct/yoy_pp
                  based on whether each series is a percent-unit series.
+    diff_ids: series that also get a period_diff column (level change) in the
+              period export, e.g. monthly jobs added for PAYEMS.
     """
     con = connect()
 
@@ -95,16 +97,23 @@ def _export_group_unified(group_id: str, series_ids: list, output_dir: Path,
         ).fetchone()
         names[sid] = row[0] if row else sid
 
-    all_dates = set()
-    series_data = {}
+    # Build column list: (series_id, calc_type, header)
+    columns = []
     for sid in series_ids:
         ct = f"{calc_family}_pp" if sid in pct_ids else f"{calc_family}_pct"
+        columns.append((sid, ct, names[sid] + suffix))
+        if calc_family == "period" and sid in diff_ids:
+            columns.append((sid, "period_diff", names[sid] + " Period Diff"))
+
+    all_dates = set()
+    col_data = {}
+    for sid, ct, header in columns:
         rows = con.execute(
             "SELECT date::text, value FROM calculated "
             "WHERE series_id = %s AND calc_type = %s ORDER BY date",
             (sid, ct),
         ).fetchall()
-        series_data[sid] = {d: v for d, v in rows}
+        col_data[(sid, ct)] = {d: v for d, v in rows}
         all_dates.update(d for d, _ in rows)
 
     dates_sorted = sorted(all_dates)
@@ -113,11 +122,11 @@ def _export_group_unified(group_id: str, series_ids: list, output_dir: Path,
 
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["date"] + [names[sid] + suffix for sid in series_ids])
+        writer.writerow(["date"] + [header for _, _, header in columns])
         for d in dates_sorted:
             row = [d]
-            for sid in series_ids:
-                val = series_data[sid].get(d, "")
+            for sid, ct, _ in columns:
+                val = col_data[(sid, ct)].get(d, "")
                 row.append(val)
             writer.writerow(row)
 
@@ -170,6 +179,7 @@ def export_all_groups_calcs(cfg: dict, updated_ids: set = None,
     Each CSV picks the right calc type per series (pp for rates, pct for levels).
     """
     pct_ids = percent_series(cfg)
+    diff_ids = diff_series(cfg)
     paths = []
     if updated_ids is not None:
         groups = _groups_with_updates(cfg, updated_ids)
@@ -181,7 +191,7 @@ def export_all_groups_calcs(cfg: dict, updated_ids: set = None,
         for calc_family, suffix in [("period", " Period Chg"), ("yoy", " YoY Chg")]:
             sub_dir = output_dir / calc_family
             path = _export_group_unified(gid, series_ids, sub_dir,
-                                         calc_family, pct_ids,
+                                         calc_family, pct_ids, diff_ids,
                                          suffix=suffix, db_path=db_path)
             paths.append(path)
     return paths

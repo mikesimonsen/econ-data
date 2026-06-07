@@ -31,6 +31,23 @@ def percent_series(cfg: dict) -> set:
     return result
 
 
+def diff_series(cfg: dict) -> set:
+    """Return set of series IDs with diff: true.
+
+    These level series also get a period_diff calc (absolute change from the
+    prior observation, e.g. monthly jobs added for PAYEMS).
+    """
+    result = set()
+    for s in cfg.get("series", []):
+        if s.get("diff"):
+            result.add(s["id"])
+    for group in cfg.get("groups", {}).values():
+        for s in group["series"]:
+            if s.get("diff"):
+                result.add(s["id"])
+    return result
+
+
 def inverted_series(cfg: dict) -> set:
     """Return set of series IDs where rising = economic weakness."""
     result = set()

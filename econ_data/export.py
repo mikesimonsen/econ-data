@@ -15,6 +15,7 @@ DATA_TYPES = {
     "yoy_pct":    {"label": "YoY % Change",     "suffix": " yoy_pct"},
     "period_pp":  {"label": "Period pp Change",  "suffix": " period_pp"},
     "yoy_pp":     {"label": "YoY pp Change",     "suffix": " yoy_pp"},
+    "period_diff": {"label": "Period Level Change", "suffix": " period_diff"},
     "all":        {"label": "All",              "suffix": ""},
 }
 
