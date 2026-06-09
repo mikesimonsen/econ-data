@@ -218,6 +218,13 @@ def refresh_declared_calendar(cfg: dict, horizon_days: int = DEFAULT_HORIZON_DAY
     now = datetime.now()
     rows: list[tuple] = []
 
+    # Rolling averages (e.g. *_4WK, *_13WK) are computed by calc_rolling on
+    # every capture of their source series — they have no external release, so
+    # they must never be scheduled (and thus can never go OVERDUE). They live in
+    # the same cadence groups as their source only for export/display.
+    from econ_data.calc_rolling import ROLLING_SERIES
+    computed_ids = {derived_id for _, _, derived_id, _ in ROLLING_SERIES}
+
     for gid, group in cfg.get("groups", {}).items():
         cadence = group.get("cadence")
         if not cadence:
@@ -241,6 +248,8 @@ def refresh_declared_calendar(cfg: dict, horizon_days: int = DEFAULT_HORIZON_DAY
 
         for s in group["series"]:
             sid = s["id"]
+            if sid in computed_ids:
+                continue  # computed downstream, not an external release
             # In a mixed group (no source: tag), only series with bls_id are
             # non-FRED; pure FRED ones get their schedule from FRED's API.
             if not group_source and not s.get("bls_id"):
