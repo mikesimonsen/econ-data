@@ -854,10 +854,10 @@ groups:
     name: "Mortgage Intent Index (Xactus)"
     source: xactus
     cadence:
-      frequency: monthly
-      rule: "around-15"
+      frequency: weekly
+      rule: "monday"          # Xactus emails the weekly XMII spreadsheet on Mondays
       release_time_et: "09:00"
-      grace_days: 5
+      grace_days: 4           # manual upload — tolerate a few days slip
     series:
       - id: XACTUS_MII
         name: "Xactus Mortgage Intent Index"
