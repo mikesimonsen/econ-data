@@ -223,7 +223,8 @@ def _sparkline_svg(points: list, width: int = 120, height: int = 28,
     # Visible dot on the last point
     lx, ly = coords[-1]
     return (
-        f'<svg width="{width}" height="{height}" style="vertical-align:middle">'
+        f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
+        f'preserveAspectRatio="none" style="vertical-align:middle">'
         f'<polyline points="{polyline}" fill="none" stroke="{color}" '
         f'stroke-width="1.5" stroke-linejoin="round"/>'
         f'<circle cx="{lx}" cy="{ly}" r="2" fill="{color}"/>'
@@ -721,15 +722,17 @@ def _render_page(**ctx) -> str:
 </header>
 
 <nav>
-  <a href="#today" class="active" onclick="showTab('today', this)">Today</a>
-  <a href="#housing" onclick="showTab('housing', this)">Housing</a>
-  <a href="#inflation" onclick="showTab('inflation', this)">Inflation</a>
-  <a href="#employment" onclick="showTab('employment', this)">Employment</a>
-  <a href="#fed" onclick="showTab('fed', this)">Fed</a>
-  <a href="#upcoming" onclick="showTab('upcoming', this)">Upcoming</a>
-  <a href="#recent" onclick="showTab('recent', this)">Recent Data Releases{_badge(recent_count)}</a>
-  <a href="#flagged" onclick="showTab('flagged', this)">Flagged <span id="flagged-badge" class="badge" style="display:none">0</span></a>
-  <a href="#deepdive" onclick="showTab('deepdive', this)">All Data</a>
+  <div class="nav-tabs">
+    <a href="#today" class="active" onclick="showTab('today', this)">Today</a>
+    <a href="#housing" onclick="showTab('housing', this)">Housing</a>
+    <a href="#inflation" onclick="showTab('inflation', this)">Inflation</a>
+    <a href="#employment" onclick="showTab('employment', this)">Employment</a>
+    <a href="#fed" onclick="showTab('fed', this)">Fed</a>
+    <a href="#upcoming" onclick="showTab('upcoming', this)">Upcoming</a>
+    <a href="#recent" onclick="showTab('recent', this)">Recent Data Releases{_badge(recent_count)}</a>
+    <a href="#flagged" onclick="showTab('flagged', this)">Flagged <span id="flagged-badge" class="badge" style="display:none">0</span></a>
+    <a href="#deepdive" onclick="showTab('deepdive', this)">All Data</a>
+  </div>
   <div class="search-box">
     <input type="text" id="search-input" placeholder="Search series..." oninput="filterSeries(this.value)">
   </div>
@@ -910,11 +913,11 @@ def _render_series_table(series_list, ctx, show_signals=True) -> str:
                 <div class="series-id">{_sid_html(sid, source_urls)}</div>
               </td>
               <td class="spark-col">{spark}</td>
-              <td class="date-col">{date_str}</td>
-              <td class="val-col">{_format_val(a['latest_value'], is_pct)}</td>
-              <td class="chg-col">{_trend_arrow(a)} {_format_period_change(a, is_pct)}</td>
-              <td class="chg-col">{_format_change(a['yoy_pct'], is_pct)}</td>
-              <td class="release-col">{released}</td>
+              <td class="date-col" data-label="As of">{date_str}</td>
+              <td class="val-col" data-label="Latest">{_format_val(a['latest_value'], is_pct)}</td>
+              <td class="chg-col" data-label="Period">{_trend_arrow(a)} {_format_period_change(a, is_pct)}</td>
+              <td class="chg-col" data-label="YoY">{_format_change(a['yoy_pct'], is_pct)}</td>
+              <td class="release-col" data-label="Released">{released}</td>
               <td class="signal-col">{rev_tag}{signal_tags}</td>
               <td class="export-col"><button class="btn-flag" onclick="event.stopPropagation(); flagSeriesFromRow(this)" title="Flag for commentary">&#9873;</button><button class="btn-export" onclick="event.stopPropagation(); downloadCsv('{sid}')">CSV</button></td>
             </tr>""")
@@ -2183,11 +2186,11 @@ def _render_all_groups(ctx) -> str:
                 <div class="series-id">{_sid_html(sid, source_urls)}</div>
               </td>
               <td class="spark-col">{spark}</td>
-              <td class="date-col">{date_str}</td>
-              <td class="val-col">{_format_val(a['latest_value'], is_pct)}</td>
-              <td class="chg-col">{_trend_arrow(a)} {_format_period_change(a, is_pct)}</td>
-              <td class="chg-col">{_format_change(a['yoy_pct'], is_pct)}</td>
-              <td class="release-col">{released}</td>
+              <td class="date-col" data-label="As of">{date_str}</td>
+              <td class="val-col" data-label="Latest">{_format_val(a['latest_value'], is_pct)}</td>
+              <td class="chg-col" data-label="Period">{_trend_arrow(a)} {_format_period_change(a, is_pct)}</td>
+              <td class="chg-col" data-label="YoY">{_format_change(a['yoy_pct'], is_pct)}</td>
+              <td class="release-col" data-label="Released">{released}</td>
               <td class="signal-col">{signal_tags} {trend}</td>
               <td class="export-col"><button class="btn-flag" onclick="event.stopPropagation(); flagSeriesFromRow(this)" title="Flag for commentary">&#9873;</button><button class="btn-export" onclick="event.stopPropagation(); downloadCsv('{sid}')">CSV</button></td>
             </tr>
@@ -2309,6 +2312,7 @@ nav {
   padding: 0 32px;
   background: var(--surface);
 }
+.nav-tabs { display: flex; gap: 0; }
 nav a {
   padding: 12px 20px;
   color: var(--text-muted);
@@ -2411,7 +2415,7 @@ main { padding: 24px 32px; max-width: 1400px; }
   margin-bottom: 32px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  overflow: hidden;
+  overflow-x: auto;
 }
 .group-header {
   background: var(--surface);
@@ -2660,6 +2664,161 @@ main { padding: 24px 32px; max-width: 1400px; }
 }
 .revision-mini-table .val-col { text-align: right; }
 .revision-mini-table .chg-col { text-align: right; }
+
+/* ============================================================
+   Mobile / responsive
+   ============================================================ */
+
+/* Phone + portrait tablet: card layout, scrollable nav, fluid spacing */
+@media (max-width: 768px) {
+  header {
+    padding: 14px 16px 12px;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 17px; line-height: 1.25; }
+  header .date { font-size: 12px; margin-left: auto; }
+  header .header-logo { height: 26px; }
+
+  /* Nav stacks: tabs become a horizontally-scrollable strip, search below */
+  nav {
+    flex-direction: column;
+    padding: 0;
+    overflow: visible;
+  }
+  .nav-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding: 0 8px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .nav-tabs::-webkit-scrollbar { display: none; }
+  nav a {
+    padding: 12px 14px;
+    font-size: 13px;
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+
+  /* Search drops to its own full-width row below the tab strip */
+  .search-box {
+    margin-left: 0;
+    width: 100%;
+    padding: 8px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .search-box input { width: 100%; }
+
+  main { padding: 16px 12px; max-width: 100%; }
+  .analysis-block { padding: 16px; margin-bottom: 24px; }
+  .analysis-block.monthly-summary h2.analysis-h { font-size: 16px; }
+
+  /* Charts: keep SVGs inside the viewport */
+  .hero-chart { padding: 14px 14px; }
+  .hero-chart svg, .chart-wrap svg, .fed-chart svg { max-width: 100%; height: auto; }
+  .chart-actions { flex-wrap: wrap; }
+
+  /* Group headers stack the export button */
+  .group-block { border: none; border-radius: 0; overflow: visible; margin-bottom: 20px; }
+  .group-header {
+    padding: 0 2px 10px;
+    background: transparent;
+    border-bottom: none;
+  }
+  .group-header h3 { font-size: 15px; }
+
+  /* Data tables collapse into stacked cards */
+  .data-table thead { display: none; }
+  .data-table, .data-table tbody { display: block; width: 100%; }
+
+  .data-table tr.series-row {
+    display: block;
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    margin: 0 0 10px;
+    padding: 14px 16px;
+  }
+  .series-row.fresh { border-color: rgba(63, 185, 80, 0.4); }
+  .series-row td {
+    display: block;
+    border: none !important;
+    padding: 0;
+    width: auto;
+  }
+
+  .series-row .name-col { padding-right: 88px; min-width: 0; }
+  .series-row .series-name { font-size: 15px; }
+
+  /* Flag + CSV pinned to the card's top-right corner */
+  .series-row .export-col {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .series-row .btn-flag { opacity: 0.55; font-size: 16px; }
+
+  /* Sparkline spans the card width */
+  .series-row .spark-col { width: 100%; margin: 12px 0; }
+  .series-row .spark-col svg { width: 100%; height: 44px; }
+
+  /* Metric cells become a wrapped row of labelled values */
+  .series-row .date-col,
+  .series-row .val-col,
+  .series-row .chg-col,
+  .series-row .release-col {
+    display: inline-block;
+    width: auto;
+    text-align: left;
+    vertical-align: top;
+    margin: 0 20px 10px 0;
+    font-size: 14px;
+    color: var(--text);
+  }
+  .series-row .date-col::before,
+  .series-row .val-col::before,
+  .series-row .chg-col::before,
+  .series-row .release-col::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 3px;
+  }
+
+  .series-row .signal-col { display: block; min-width: 0; margin-top: 2px; }
+  .series-row .signal-tag { margin: 2px 4px 2px 0; }
+
+  /* Detail + revision expansion rows stretch full width */
+  .detail-row td, .revision-row td { display: block; width: 100%; }
+  .detail-content { padding: 14px 4px; }
+  .detail-content table { width: 100%; }
+
+  /* Upcoming releases: keep the compact 3-column table, just shrink it */
+  .upcoming-table td, .upcoming-table th { padding: 6px 8px; font-size: 12px; }
+  .upcoming-table .name-col { min-width: 0; }
+
+  /* Fed tab tables */
+  .fed-table td:first-child { width: auto; }
+
+  /* Release status lists */
+  .release-status .status-list { padding-left: 0; }
+}
+
+/* Touch devices: reveal hover-only affordances */
+@media (hover: none) {
+  .btn-flag { opacity: 0.5; }
+  .btn-flag-inline { opacity: 0.35; }
+}
 """
 
 
@@ -3023,6 +3182,29 @@ function renderFlagged() {
 
 // Render on page load
 document.addEventListener('DOMContentLoaded', renderFlagged);
+
+// ── Touch support for chart crosshair/tooltip ────────────────────────
+// chartHover() reads evt.clientX + evt.currentTarget, so we feed it a
+// synthetic event from the active touch point. Scrub with a finger, lift,
+// and the reading stays put (no auto-hide on touchend).
+function _bindChartTouch() {
+  var overlays = document.querySelectorAll('.chart-overlay');
+  for (var i = 0; i < overlays.length; i++) {
+    (function(rect) {
+      var id = rect.getAttribute('data-chart-id');
+      if (!id) return;
+      var onTouch = function(e) {
+        if (!e.touches || !e.touches.length) return;
+        e.preventDefault();
+        chartHover({currentTarget: rect, clientX: e.touches[0].clientX,
+                    clientY: e.touches[0].clientY}, id);
+      };
+      rect.addEventListener('touchstart', onTouch, {passive: false});
+      rect.addEventListener('touchmove', onTouch, {passive: false});
+    })(overlays[i]);
+  }
+}
+document.addEventListener('DOMContentLoaded', _bindChartTouch);
 
 // ── Chart crosshair hover (single- and multi-series) ─────────────────
 // Parse a YYYY-MM-DD ISO date as a *local* date so toLocaleDateString
