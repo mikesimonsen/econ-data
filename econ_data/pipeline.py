@@ -527,7 +527,8 @@ def post_process(cfg: dict, series: list, result: dict, revisions: list) -> None
     repo_dir = Path(__file__).resolve().parent.parent
     try:
         subprocess.run(
-            ["git", "add", "sheets_data/", "sheets_data_calcs/", "docs/"],
+            ["git", "add", "sheets_data/", "sheets_data_calcs/", "docs/",
+             "monthly_summaries/"],
             cwd=repo_dir, check=True, capture_output=True,
         )
         subprocess.run(
