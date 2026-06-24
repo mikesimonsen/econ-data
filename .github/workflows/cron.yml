@@ -31,8 +31,14 @@ on:
     # 10:30 ET — captures 10:00 ET releases (JOLTS, ISM, Census, Conf Board)
     - cron: '30 14 * * *'       # 10:30 EDT
     - cron: '30 15 * * *'       # 10:30 EST
-    # 16:00 ET — late-day MND, retry FRED fetch_errors
-    - cron: '0 20 * * *'        # 16:00 EDT
+    # 13:00 ET — intraday sweep: catches releases FRED posts to its API early
+    #            afternoon (after the GH-Actions-delayed 10:30 morning fetch)
+    - cron: '0 17 * * *'        # 13:00 EDT
+    - cron: '0 18 * * *'        # 13:00 EST
+    # 15:00 ET — intraday sweep (second afternoon pass)
+    - cron: '0 19 * * *'        # 15:00 EDT  (15:00 EST shares 0 20 below)
+    # 16:00 ET — late-day MND + intraday FRED sweep
+    - cron: '0 20 * * *'        # 16:00 EDT / 15:00 EST
     - cron: '0 21 * * *'        # 16:00 EST
     # Sunday 06:00 ET — weekly release_schedule refresh
     - cron: '0 10 * * 0'        # 06:00 EDT Sun
@@ -75,8 +81,12 @@ jobs:
               "0 14 * * *:EST")    COHORT=morning;  SHOULD_RUN=true ;;
               "30 14 * * *:EDT")   COHORT=morning;  SHOULD_RUN=true ;;
               "30 15 * * *:EST")   COHORT=morning;  SHOULD_RUN=true ;;
-              "0 20 * * *:EDT")    COHORT=intraday; SHOULD_RUN=true ;;
-              "0 21 * * *:EST")    COHORT=intraday; SHOULD_RUN=true ;;
+              "0 17 * * *:EDT")    COHORT=intraday; SHOULD_RUN=true ;;  # 13:00 EDT
+              "0 18 * * *:EST")    COHORT=intraday; SHOULD_RUN=true ;;  # 13:00 EST
+              "0 19 * * *:EDT")    COHORT=intraday; SHOULD_RUN=true ;;  # 15:00 EDT
+              "0 20 * * *:EDT")    COHORT=intraday; SHOULD_RUN=true ;;  # 16:00 EDT
+              "0 20 * * *:EST")    COHORT=intraday; SHOULD_RUN=true ;;  # 15:00 EST
+              "0 21 * * *:EST")    COHORT=intraday; SHOULD_RUN=true ;;  # 16:00 EST
               "0 10 * * 0:EDT")    COHORT=calendar; SHOULD_RUN=true ;;
               "0 11 * * 0:EST")    COHORT=calendar; SHOULD_RUN=true ;;
               *) echo "Schedule $SCHEDULE doesn't match TZ $TZ_NAME — skipping." ;;

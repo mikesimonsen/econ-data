@@ -41,7 +41,7 @@ from econ_data.monthly_housing_summary import (
     generate_monthly_summary, write_monthly_summary,
 )
 from econ_data.store import (
-    detect_and_save_revisions, get_failed_series, get_last_dates,
+    detect_and_save_revisions, get_last_dates,
     get_recent_revisions, get_series_captured_today, save, save_fetch_log,
     save_groups,
 )
@@ -249,8 +249,19 @@ def fetch_morning(cfg: dict, last_dates: dict, last_checked: dict) -> tuple[dict
 # ─────────────────────────────────────────────────────────────────────────
 
 def fetch_intraday(cfg: dict, last_dates: dict) -> tuple[dict, list]:
-    """4 PM ET cohort: MND + retry of FRED series in fetch_errors.
-    Returns (result, revisions)."""
+    """Afternoon cohort (1/3/4 PM ET): MND + a schedule-driven sweep of every
+    FRED series still due-but-uncaptured today.
+
+    FRED frequently posts a 10 AM ET release to its API only in the early
+    afternoon — after the morning cohort's last fetch, which GitHub Actions
+    routinely delays to ~1:30 PM ET. Sweeping due-but-PENDING/OVERDUE series
+    here captures those same-day instead of waiting for tomorrow's 7 AM run.
+
+    fetch_all only queries series with a PENDING/OVERDUE row whose
+    scheduled_release <= today, so already-captured series and non-release
+    afternoons are cheap no-ops. This sweep also subsumes the old
+    fetch_errors-only retry: a series that errored in the morning is still
+    PENDING, so it gets re-attempted here. Returns (result, revisions)."""
     result = _empty_result()
 
     log("Fetching MND mortgage rates...")
@@ -260,37 +271,27 @@ def fetch_intraday(cfg: dict, last_dates: dict) -> tuple[dict, list]:
         _mark_captured(mnd["new"], result["captured_advanced"])
     _merge(result, mnd)
 
-    failed_ids = get_failed_series()
-    revisions: list = []
-    if failed_ids:
-        all_fred = fred_series(cfg)
-        retry_subset = [(sid, name) for sid, name in all_fred if sid in failed_ids]
-        missing = failed_ids - {sid for sid, _ in retry_subset}
-        if missing:
-            log(f"Skipping non-FRED series in fetch_errors: {sorted(missing)}")
-        if retry_subset:
-            log(f"Retrying {len(retry_subset)} failed FRED series: "
-                f"{', '.join(sid for sid, _ in retry_subset)}")
-            retry = fetch_all(retry_subset, last_dates=last_dates, force=True)
+    fred = fred_series(cfg)
+    log(f"Sweeping due-but-uncaptured FRED ({len(fred)} series, only those due)...")
+    fred_result = fetch_all(fred, last_dates=last_dates)
 
-            all_fetched = retry.get("all_fetched", [])
-            revisions = detect_and_save_revisions(all_fetched)
-            if revisions:
-                log(f"Revisions detected ({len(revisions)}):")
-                for r in revisions:
-                    log(f"  {r['series_id']:<20} {r['date']}  "
-                        f"{r['old_value']:.1f} → {r['new_value']:.1f}  "
-                        f"({r['pct_change']:+.2f}%)")
-            if all_fetched:
-                save(all_fetched)
-            if retry.get("checked"):
-                save_fetch_log(retry["checked"])
-            _merge(result, retry)
-    else:
-        log("No FRED retries pending.")
+    if fred_result.get("checked"):
+        save_fetch_log(fred_result["checked"])
 
-    # Recompute derived series — MND just changed, and a successful retry of
-    # DGS10 would change the spread input as well.
+    all_fetched = fred_result.get("all_fetched", [])
+    revisions = detect_and_save_revisions(all_fetched)
+    if revisions:
+        log(f"Revisions detected ({len(revisions)}):")
+        for r in revisions:
+            log(f"  {r['series_id']:<20} {r['date']}  "
+                f"{r['old_value']:.1f} → {r['new_value']:.1f}  "
+                f"({r['pct_change']:+.2f}%)")
+    if all_fetched:
+        save(all_fetched)
+    _merge(result, fred_result)
+
+    # Recompute derived series — MND just changed, and a freshly-swept DGS10
+    # would change the spread input as well.
     log("Recomputing mortgage rate spread...")
     spread = compute_spread(last_dates=get_last_dates())
     if spread["new"]:

@@ -94,14 +94,21 @@ Defined in `.github/workflows/cron.yml`. Each firing triggers a Fly machine in
 | 07:00         | morning  | Overnight markets (Treasury, S&P, oil), prior-day catchup         |
 | 09:00         | morning  | Captures 08:30 ET releases (CPI, PPI, payrolls, claims, etc.)     |
 | 10:30         | morning  | Captures 10:00 ET releases (JOLTS, ISM, Census, NAR, Conf Board)  |
-| 16:00         | intraday | Late-day MND, retry FRED `fetch_errors`                           |
+| 13:00         | intraday | Sweep FRED releases that hit the API early afternoon              |
+| 15:00         | intraday | Second afternoon sweep                                            |
+| 16:00         | intraday | Late-day MND + afternoon FRED sweep                              |
 | Sun 06:00     | calendar | Weekly refresh of `release_schedule` (FRED API + cadence rules)   |
 
-The morning cohort fires 3x/day. Each firing only does work for series whose
-`scheduled_release <= today` and status `PENDING|OVERDUE` — subsequent firings
-are cheap no-ops on non-release days. LLM analyses (daily + housing) are
-gated on "did any new observation arrive this run?" so they regen at most
-once per day-of-release.
+The morning cohort fires 3x/day; the intraday cohort fires 3x/afternoon
+(13:00 / 15:00 / 16:00 ET). Both run the same schedule-driven FRED fetch, so
+each firing only does work for series whose `scheduled_release <= today` and
+status `PENDING|OVERDUE` — subsequent firings are cheap no-ops once a release
+is captured, and free on non-release days. The afternoon sweeps exist because
+FRED routinely posts a 10:00 ET release to its API hours later (early
+afternoon), after the GitHub-Actions-delayed 10:30 morning fetch has already
+run; without them, those releases waited until the next 7 AM run. LLM analyses
+(daily + housing) are gated on "did any new observation arrive this run?" so
+they regen at most once per day-of-release.
 
 ## Commands
 
