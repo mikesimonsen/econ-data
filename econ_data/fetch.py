@@ -35,6 +35,49 @@ def _detect_frequency(series_id: str) -> str:
 
 REVISION_LOOKBACK_MONTHS = 4  # re-fetch this many months to catch revisions
 
+# Case-Shiller SA home-price indices (Jan 2000 = 100) have historically spanned
+# ~41 (Portland, 1987) to ~450 (recent peak). In 2026-07 FRED published a
+# corrupted vintage for several city series with dollar-scale values (e.g.
+# 890422) that polluted the DB. This bound drops such implausible readings at
+# fetch time so they never reach the DB. The window is deliberately wide — below
+# the all-time low and well above the current peak — so it only ever catches
+# gross unit glitches, never legitimate values. See memory:
+# project_case_shiller_garbage_april2026.
+CASE_SHILLER_RANGE = (20.0, 3000.0)
+
+
+def _case_shiller_ids() -> frozenset:
+    """Series IDs in the config `case-shiller` group (loaded + cached once)."""
+    cached = getattr(_case_shiller_ids, "_cache", None)
+    if cached is None:
+        try:
+            from econ_data import config
+            group = config.load().get("groups", {}).get("case-shiller", {})
+            cached = frozenset(s["id"] for s in group.get("series", []))
+        except Exception:
+            cached = frozenset()
+        _case_shiller_ids._cache = cached
+    return cached
+
+
+def _drop_implausible(series_id: str, observations: list) -> list:
+    """Drop observations whose value is outside the sanity range for the series.
+
+    Only Case-Shiller series are bounded today. Rejected values are logged (not
+    silently swallowed) so an upstream FRED data glitch stays visible."""
+    if series_id not in _case_shiller_ids():
+        return observations
+    lo, hi = CASE_SHILLER_RANGE
+    kept = []
+    for o in observations:
+        if lo <= o.value <= hi:
+            kept.append(o)
+        else:
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{ts}] REJECTED implausible {series_id} {o.date} = "
+                  f"{o.value} (outside Case-Shiller range {lo}–{hi})")
+    return kept
+
 
 def fetch_series(series_id: str, name: str, since: date = None) -> list:
     """
@@ -130,11 +173,15 @@ def fetch_all(series: list, last_dates: dict = None,
             if freq == "daily":
                 # Daily series: just fetch new data, no revision tracking
                 results = fetch_series(series_id, name, since=last_obs)
+                # Drop implausible values (e.g. a corrupted FRED vintage) before
+                # they reach revision detection or the DB.
+                results = _drop_implausible(series_id, results)
                 new_only = results
             else:
                 # Weekly/monthly: fetch revision window to catch changes
                 results = fetch_series_with_revisions(series_id, name,
                                                      last_obs=last_obs)
+                results = _drop_implausible(series_id, results)
                 new_only = [o for o in results
                             if last_obs is None or o.date > last_obs]
 
