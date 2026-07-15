@@ -156,13 +156,36 @@ groups:
         units: percent
 
   ppi:
-    name: "Producer Price Index (BLS, SA)"
+    name: "PPI - Producer Price Index (BLS, SA)"
     signals: minimal
     series:
+      # Headline and core (Final Demand)
+      - id: PPIFIS
+        name: "PPI Final Demand (Headline)"
+      - id: PPIFES
+        name: "PPI Final Demand Less Food & Energy (Core)"
+      - id: WPSFD49116
+        name: "PPI Final Demand Less Food, Energy & Trade Services"
+      # Goods vs. services
+      - id: PPIDGS
+        name: "PPI Final Demand Goods"
+      - id: PPIDSS
+        name: "PPI Final Demand Services"
+      # Final demand goods components
+      - id: WPSFD4111
+        name: "PPI Final Demand Finished Consumer Foods"
+      - id: WPSFD4121
+        name: "PPI Final Demand Finished Consumer Energy Goods"
+      # Intermediate demand (pipeline pressure)
+      - id: WPSID61
+        name: "PPI Processed Goods for Intermediate Demand"
+      - id: WPSID62
+        name: "PPI Unprocessed Goods for Intermediate Demand"
+      # Legacy finished-goods indices (history back to 1947)
       - id: WPSFD49207
-        name: "PPI Final Demand - Finished Goods"
+        name: "PPI Finished Goods (legacy)"
       - id: WPSFD4131
-        name: "PPI Final Demand - Less Food & Energy"
+        name: "PPI Finished Goods Less Food & Energy (legacy)"
 
   labor-headlines:
     name: "Labor Market Headlines"
