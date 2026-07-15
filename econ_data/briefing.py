@@ -1713,6 +1713,23 @@ _INFLATION_COMPARISONS = [
             ("PCETRIM12M159SFRBDAL", "Trimmed-Mean PCE", "raw"),
         ],
     },
+    {
+        "title": "Producer Prices: PPI Final Demand vs Core — YoY %",
+        "chart_type": "yoy",
+        "series": [
+            ("PPIFIS", "PPI Final Demand (headline)"),
+            ("PPIFES", "Core (less food & energy)"),
+            ("WPSFD49116", "Less food, energy & trade services"),
+        ],
+    },
+    {
+        "title": "Producer Prices: Goods vs Services — YoY %",
+        "chart_type": "yoy",
+        "series": [
+            ("PPIDGS", "Final Demand Goods"),
+            ("PPIDSS", "Final Demand Services"),
+        ],
+    },
 ]
 
 
