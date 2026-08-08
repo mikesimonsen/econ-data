@@ -16,6 +16,7 @@ from pathlib import Path
 
 from econ_data.briefing import generate_briefing
 from econ_data.calc_affordability import compute_affordability
+from econ_data.calc_regional import compute_regional
 from econ_data.calc_rolling import compute_rolling
 from econ_data.calc_spread import compute_spread
 from econ_data.calculations import compute_all
@@ -241,6 +242,12 @@ def fetch_morning(cfg: dict, last_dates: dict, last_checked: dict) -> tuple[dict
         save(rolling["new"])
     _merge(result, rolling)
 
+    log("Computing regional payroll aggregates...")
+    regional = compute_regional(last_dates=get_last_dates())
+    if regional["new"]:
+        save(regional["new"])
+    _merge(result, regional)
+
     return result, revisions
 
 
@@ -303,6 +310,14 @@ def fetch_intraday(cfg: dict, last_dates: dict) -> tuple[dict, list]:
     if rolling["new"]:
         save(rolling["new"])
     _merge(result, rolling)
+
+    # Metro payrolls are monthly, but the afternoon sweep is exactly when a
+    # late-posting FRED release lands, so recompute here too.
+    log("Recomputing regional payroll aggregates...")
+    regional = compute_regional(last_dates=get_last_dates())
+    if regional["new"]:
+        save(regional["new"])
+    _merge(result, regional)
 
     return result, revisions
 

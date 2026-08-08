@@ -952,6 +952,114 @@ groups:
       - id: CES2023620001
         name: "All Employees - Nonresidential Building"
 
+  regional-payrolls:
+    name: "Regional Payrolls - Metro Total Nonfarm (BLS SAE, SA)"
+    signals: minimal
+    # All series are seasonally adjusted monthly total nonfarm employment for
+    # the MSA, in thousands of persons. BLS State and Area Employment (SAE)
+    # program, delivered via FRED, so FRED's release calendar drives fetching.
+    # Metro definitions follow the 2023 OMB delineations — several were
+    # renamed/redrawn (Cleveland, Houston, Austin, Denver, Nashville), which is
+    # why a few IDs are the long BLS-style SMS… form rather than the short
+    # friendly form: the short IDs for those metros are discontinued.
+    series:
+      # --- Largest metros, by employment ---
+      - id: NEWY636NA
+        name: "Payrolls - New York-Newark-Jersey City (000s)"
+      - id: SMS06310800000000001
+        name: "Payrolls - Los Angeles-Long Beach-Anaheim (000s)"
+      - id: CHIC917NA
+        name: "Payrolls - Chicago-Naperville-Elgin (000s)"
+      - id: DALL148NA
+        name: "Payrolls - Dallas-Fort Worth-Arlington (000s)"
+      - id: HOUS448NA
+        name: "Payrolls - Houston-Pasadena-The Woodlands (000s)"
+      - id: WASH911NA
+        name: "Payrolls - Washington-Arlington-Alexandria (000s)"
+      - id: PHIL942NA
+        name: "Payrolls - Philadelphia-Camden-Wilmington (000s)"
+      - id: ATLA013NA
+        name: "Payrolls - Atlanta-Sandy Springs-Roswell (000s)"
+      - id: MIAM112NA
+        name: "Payrolls - Miami-Fort Lauderdale-West Palm Beach (000s)"
+      - id: SMS25144600000000001
+        name: "Payrolls - Boston-Cambridge-Newton (000s)"
+      - id: PHOE004NA
+        name: "Payrolls - Phoenix-Mesa-Chandler (000s)"
+      - id: SEAT653NA
+        name: "Payrolls - Seattle-Tacoma-Bellevue (000s)"
+      - id: DETR826NA
+        name: "Payrolls - Detroit-Warren-Dearborn (000s)"
+      - id: MINN427NA
+        name: "Payrolls - Minneapolis-St. Paul-Bloomington (000s)"
+      - id: RIVE106NA
+        name: "Payrolls - Riverside-San Bernardino-Ontario (000s)"
+      - id: DENV708NA
+        name: "Payrolls - Denver-Aurora-Centennial (000s)"
+      - id: SAND706NA
+        name: "Payrolls - San Diego-Chula Vista-Carlsbad (000s)"
+      - id: TAMP312NA
+        name: "Payrolls - Tampa-St. Petersburg-Clearwater (000s)"
+      - id: ORLA712NA
+        name: "Payrolls - Orlando-Kissimmee-Sanford (000s)"
+      - id: BALT524NA
+        name: "Payrolls - Baltimore-Columbia-Towson (000s)"
+      - id: AUST448NA
+        name: "Payrolls - Austin-Round Rock-San Marcos (000s)"
+      - id: CHAR737NA
+        name: "Payrolls - Charlotte-Concord-Gastonia (000s)"
+      - id: PORT941NA
+        name: "Payrolls - Portland-Vancouver-Hillsboro (000s)"
+      - id: NASH947NA
+        name: "Payrolls - Nashville-Davidson-Murfreesboro-Franklin (000s)"
+      - id: PITT342NA
+        name: "Payrolls - Pittsburgh (000s)"
+      - id: SANA748NA
+        name: "Payrolls - San Antonio-New Braunfels (000s)"
+      - id: COLU139NA
+        name: "Payrolls - Columbus, OH (000s)"
+      - id: LASV832NA
+        name: "Payrolls - Las Vegas-Henderson-North Las Vegas (000s)"
+      - id: CINC139NA
+        name: "Payrolls - Cincinnati (000s)"
+      - id: INDI918NA
+        name: "Payrolls - Indianapolis-Carmel-Greenwood (000s)"
+      - id: KANS129NA
+        name: "Payrolls - Kansas City (000s)"
+      - id: SACR906NA
+        name: "Payrolls - Sacramento-Roseville-Folsom (000s)"
+      - id: SMS39174100000000001
+        name: "Payrolls - Cleveland (000s)"
+      - id: SALT649NA
+        name: "Payrolls - Salt Lake City-Murray (000s)"
+      - id: RALE537NA
+        name: "Payrolls - Raleigh-Cary (000s)"
+      # --- San Francisco Bay Area components ---
+      # These five MSAs make up the 9-county Bay Area. They are summed into
+      # BAY_AREA_TOTAL by econ_data/calc_regional.py. San Jose is a separate
+      # MSA from San Francisco and is ~29% of regional employment, so any
+      # "Bay Area" figure that omits it materially undercounts the region.
+      - id: SANF806NA
+        name: "Payrolls - San Francisco-Oakland-Fremont (000s)"
+      - id: SANJ906NA
+        name: "Payrolls - San Jose-Sunnyvale-Santa Clara (000s)"
+      - id: SANT206NA
+        name: "Payrolls - Santa Rosa-Petaluma (000s)"
+      - id: VALL706NA
+        name: "Payrolls - Vallejo (000s)"
+      - id: NAPA906NA
+        name: "Payrolls - Napa (000s)"
+
+  regional-payrolls-derived:
+    name: "Regional Payrolls - Multi-Metro Aggregates"
+    source: calculated
+    cadence:
+      frequency: derived  # depends on component MSA series
+    signals: minimal
+    series:
+      - id: BAY_AREA_TOTAL
+        name: "Payrolls - San Francisco Bay Area, 9-county (000s)"
+
 # Default export behavior (used when running: python export.py with no flags)
 export:
   format: excel        # csv, excel, or both
