@@ -233,6 +233,15 @@ words: *"I'm not clear on what the decision is here."* Don't manufacture decisio
 Mike explicitly does not want it. The Google API has been a recurring pain point. Propose
 SQL databases. (The existing Apps Script path is legacy — don't re-invest in it.)
 
+### Adding new FRED series requires seeding the release calendar first
+`fetch_all` gates on `series_due_now()`, which returns False when a series has **no
+`release_schedule` rows at all** — which is the state of every newly added series. A new
+series is therefore skipped on every run, forever, **without reporting an error**.
+
+After adding series to `config.yaml`, run `refresh_fred_calendar(new_ids)` to seed
+`series_release` + PENDING rows, then `fetch_all(series, force=True)` to backfill history
+past the schedule gate. Full write-up in `plans/regional-payrolls.md`.
+
 ### The static site bakes data in at build time
 `docs/index.html` does **not** read the CSVs at runtime. A database fix alone doesn't fix
 the UI until the briefing regenerates. The briefing regenerates every run; the LLM
