@@ -1,38 +1,41 @@
-# The Rate Hike Scare Faded
+# Rates Head Higher — But Not as High as They Could Be
 
-*Compass National Economic Update intro — August 2026. Companion to `macro-housing-2026-08.md`.*
+*Compass National Economic Update intro — August 2026. Tracks the 20-slide deck
+"Compass Intelligence national email August 2026.pptx".*
 
 ---
 
-A month ago the market put roughly a 37% chance on the Fed *raising* short term rates at the July
-meeting. Heading into September, that's gone. Futures now split almost evenly between a cut and a
-hold on September 16 — and the odds of a hike have fallen to essentially zero. The reason is
-inflation expectations. The Cleveland Fed's one-year measure dropped from 3.04% in June to 2.39%,
-and core CPI came in at 2.47%, which is basically the Fed's target.
+The 10-year Treasury has climbed back to 4.7%, close to the multi-decade highs of October 2023.
+Mortgage rates followed, and at 6.74% the 30-year sits at the highest level of the year. Here's the
+part that doesn't make headlines: back in October 2023, with the 10-year right about where it is
+now, mortgage rates hit 7.94%. Today they're around 6.7%. The difference is the spread — the premium
+lenders charge over Treasuries — and it has compressed considerably. That spread is the quiet force
+keeping this market working, and there is still room for it to narrow further.
 
-Mortgage rates responded. The 30-year peaked at 6.85% on July 23 — the highest in a year — and has
-eased back to 6.74%. That's modest, but the direction reversed. What's more interesting is where the
-improvement came from. The 10-year Treasury barely moved all month. All of the relief came from the
-spread between mortgage rates and Treasuries narrowing, from 2.16 down to 2.08. That spread normally
-runs closer to 1.7. If it keeps closing, mortgage rates drop into the low 6s without the Fed doing
-anything at all.
+Inflation is why rates stay elevated. CPI at 3.3% and PCE at 3.7% have each eased for two months,
+but both remain well above the Fed's 2% target. Volatile energy markets and government spending keep
+those fears alive, and elevated inflation implies elevated mortgage rates.
 
-The labor picture we hoped would improve hasn't yet. July payrolls lost 23,000 jobs. Unemployment
-did fall to 4.1%, but that's because the labor force shrank, not because companies started hiring.
-The number that matters most to us is the quits rate, stuck at 2.0%. When people don't change jobs,
-they don't relocate — and work-driven moves are exactly what we're waiting on.
+The labor market is doing something unusual. July payrolls came in 23,000 jobs short of the prior
+month, and we've averaged only 60,000 new jobs a month this year. Yet unemployment is 4.1% and
+initial claims are running at 206,000, which is very low. Call it a low-hire, low-fire economy. That
+cuts both ways for us. Almost nobody is being laid off, so there is very little distressed inventory
+coming. But almost nobody is changing jobs either, and job changes are what drive relocations.
 
-`[COMPASS DATA]` — wealth-effect update goes here. The S&P 500 is up 19% over the past year, so the
-backdrop holds. Worth refreshing the San Francisco AI-bidding-war count against June's 44 sales that
-closed $1M+ over list, and whether it has spread beyond the city yet.
+Demand softened over the last month. Pending sales in the last four weeks came in 1% below the same
+period in 2025, and all three of our leading indicators — MBA purchase applications, Altos pendings,
+and Xactus mortgage intent — have turned slightly negative. Existing home sales in July ran just
+under a 4.1 million pace, still ahead of last year but a touch below our forecast.
 
-One more thing changed in August. Inventory of existing homes fell 0.65% below last year — the first
-negative reading of 2026. That's not buyers clearing the shelves; sales were up just 1.25%. Sellers
-simply stopped listing. It's the same story as the quits rate, seen from the other side: the
-household that would have moved stayed put.
+The strength is concentrated at the top. Pending sales for the highest-priced quarter of listings
+are running 13% above last year, while the lowest-priced quarter is 5% behind. That's the wealth
+effect showing up directly in transaction data, and it's the same force behind the San Francisco
+bidding wars we discussed last month.
 
-Also in this month's National Economic Update: home prices by region, where the gap between the
-Midwest and the Sun Belt keeps widening, and what the builders' pullback means for supply next year.
+Also in this month's National Economic Update: inventory is essentially unchanged from last year and
+still 10% below 2019, home prices are up 1% nationally with eight of twenty Case-Shiller cities now
+negative, and the American homeowner remains in remarkable shape — mortgage delinquency at 1%,
+foreclosures near historic lows, and $610 billion in untapped HELOC credit.
 
 Our goal is always to help you understand what's happening in the market right now, so you can make
 the best decisions.
