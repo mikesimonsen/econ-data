@@ -429,9 +429,15 @@ def _load_analysis(today: str) -> str:
             return ""
         analysis_path = candidates[0]
     text = analysis_path.read_text()
-    # Strip the title line and the appended raw Signals/Summary sections
-    parts = text.split("\n---\n", 1)
-    narrative = parts[0]
+    # Strip the appended raw Signals/Summary sections. These are always
+    # appended by pipeline.py after a literal "## Signals" header — match on
+    # that exact marker rather than splitting on the first "---", since the
+    # LLM's own narrative sometimes inserts its own "---" divider between
+    # "Today's Data" and "This Week", which would otherwise truncate the
+    # narrative right there and silently drop "This Week".
+    narrative = text.split("\n## Signals\n", 1)[0]
+    # Drop the "---" separator pipeline.py inserts right before "## Signals"
+    narrative = re.sub(r'\n+---\s*$', '', narrative)
     # Remove the leading "# Daily Analysis — date" line
     lines = narrative.split("\n")
     if lines and lines[0].startswith("# "):
@@ -453,6 +459,9 @@ def _md_to_html(md: str, name_to_sid: dict = None) -> str:
         stripped = line.strip()
         if not stripped:
             html_lines.append("")
+            continue
+        if re.fullmatch(r'-{3,}', stripped):
+            # Horizontal rule — the LLM sometimes adds one between sections.
             continue
         if stripped.startswith("## "):
             html_lines.append(f'<h3 class="analysis-h">{stripped[3:]}</h3>')
