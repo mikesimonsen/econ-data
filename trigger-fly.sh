@@ -16,7 +16,13 @@ esac
 
 APP=econ-data-cron
 MACHINE_ID=$(fly machine list -a "$APP" --json \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
+  | python3 -c "
+import sys, json
+machines = [m for m in json.load(sys.stdin) if m.get('config', {}).get('metadata', {}).get('fly_process_group') == 'app']
+if not machines:
+    sys.exit('No machine found in the app process group')
+print(sorted(machines, key=lambda m: m['id'])[0]['id'])
+")
 
 echo "Configuring machine $MACHINE_ID (cohort=$COHORT, RUN_SCRIPT=$RUN_SCRIPT)..."
 fly machine update "$MACHINE_ID" -a "$APP" \
