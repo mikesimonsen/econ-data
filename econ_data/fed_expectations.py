@@ -374,16 +374,20 @@ def render_fed_chart(db_path: Path = DB_PATH,
     expectations = get_expectations(db_path)
     current_rate = hist_values[-1]
     forward_points = [(hist_dates[-1], current_rate)]  # start at today
-    running_rate = current_rate
     for meeting_str in sorted(expectations.keys()):
         m_date = date.fromisoformat(meeting_str)
         if m_date <= today:
             continue
         probs = expectations[meeting_str]["probabilities"]
-        # Expected change = sum(prob * bps/100)
+        # outcome_bps is the rate change from TODAY by this meeting (CME
+        # FedWatch presents each horizon's distribution as cumulative from
+        # today, not incremental from the previous meeting — evidenced by
+        # buckets running up to +150bp at the farthest horizon, far more
+        # than any single meeting can move). So the expected change here is
+        # already cumulative; adding it onto current_rate directly (not onto
+        # the previous meeting's implied rate) avoids compounding it twice.
         expected_change_pp = sum(p * (bps / 100) for bps, p in probs.items())
-        running_rate += expected_change_pp
-        forward_points.append((m_date, running_rate))
+        forward_points.append((m_date, current_rate + expected_change_pp))
 
     # ── Chart geometry ──────────────────────────────────────
     width = 900
