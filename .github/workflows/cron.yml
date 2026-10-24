@@ -111,7 +111,7 @@ jobs:
           RUN_SCRIPT: ${{ steps.cohort.outputs.run_script }}
         run: |
           MACHINE_ID=$(flyctl machine list -a econ-data-cron --json \
-            | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
+            | python3 -c "import sys, json; machines = [m for m in json.load(sys.stdin) if m.get('config', {}).get('metadata', {}).get('fly_process_group') == 'app']; print(sorted(machines, key=lambda m: m['id'])[0]['id']) if machines else sys.exit('No machine found in the app process group')")
           echo "Configuring machine $MACHINE_ID for cohort=${{ steps.cohort.outputs.cohort }} (RUN_SCRIPT=$RUN_SCRIPT)"
           # `start` doesn't accept --env, so update the machine env first, then start.
           # --skip-start avoids racing the boot; --yes skips the interactive prompt.
