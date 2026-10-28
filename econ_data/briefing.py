@@ -2336,6 +2336,7 @@ def _css() -> str:
 .fw-unverified { font-size: 10px; color: var(--amber); border: 1px solid var(--amber); border-radius: 3px; padding: 0 4px; }
 .fw-note { font-size: 12px; margin-top: 0.5em; }
 .fw-scroll { overflow-x: auto; }
+.fw-exports { display: flex; flex-wrap: wrap; gap: 6px; margin: 0.6em 0 0.4em; }
 .prob-chip { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; margin-right: 4px; font-weight: 500; }
 .prob-chip.chip-cut { background: rgba(42, 139, 60, 0.18); color: #3fb950; border: 1px solid rgba(42, 139, 60, 0.4); }
 .prob-chip.chip-hold { background: rgba(136, 136, 136, 0.18); color: #aaa; border: 1px solid rgba(136, 136, 136, 0.4); }

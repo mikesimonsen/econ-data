@@ -258,10 +258,15 @@ def _horizon(label: str) -> str:
 
 
 def _range(cell: str) -> tuple[float | None, float | None]:
-    nums = re.findall(r"-?\d+(?:\.\d+)?", cell.replace("–", " ").replace("—", " "))
-    if not nums:
-        return None, None
-    return float(nums[0]), float(nums[-1])
+    """'2.0–2.3' → (2.0, 2.3); '2.0' → (2.0, 2.0). Older SEPs separate ranges
+    with an ASCII hyphen ("2.0-2.3"), which must not read as a minus sign;
+    negative bounds ("-6.5–-4.0") keep theirs."""
+    num = r"-?\d+(?:\.\d+)?"
+    m = re.search(rf"({num})\s*[-–—]\s*({num})", cell)
+    if m:
+        return float(m.group(1)), float(m.group(2))
+    m = re.search(num, cell)
+    return (float(m.group()), float(m.group())) if m else (None, None)
 
 
 def parse_sep(html: str) -> dict:
@@ -466,6 +471,9 @@ def apply_seed(seed_path: Path = ROSTER_SEED) -> None:
                 continue
             _upsert_participant(con, pid, p["name"], institution=p["institution"],
                                 verified=bool(p.get("verified", True)), active=True)
+        for pid, inst in (seed.get("former") or {}).items():
+            con.execute("UPDATE fomc_participants SET institution = %s WHERE id = %s "
+                        "AND institution IS NULL", (inst, pid))
         for pid, who in (seed.get("appointed_by") or {}).items():
             con.execute("UPDATE fomc_participants SET appointed_by = %s WHERE id = %s",
                         (who, pid))

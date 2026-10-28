@@ -8,7 +8,7 @@ lines, and non-rate dissents.
 """
 from datetime import date
 
-from econ_data.fomc import (blackout_window, parse_calendar, parse_fomc_page, parse_rate,
+from econ_data.fomc import (_range, blackout_window, parse_calendar, parse_fomc_page, parse_rate,
                             parse_sep, parse_statement, participant_id)
 from econ_data.fomc_render import _redline
 
@@ -177,3 +177,10 @@ def test_redline_marks_changed_words():
     out = _redline("The Committee decided to raise the range.",
                    "The Committee decided to maintain the range.")
     assert "<del>raise</del>" in out and "<ins>maintain</ins>" in out
+
+
+def test_range_ascii_hyphen_is_not_a_minus_sign():
+    assert _range("2.0-2.3") == (2.0, 2.3)      # pre-2023 SEP style
+    assert _range("2.0\u20132.3") == (2.0, 2.3)
+    assert _range("-6.5\u2013-4.0") == (-6.5, -4.0)
+    assert _range("2.0") == (2.0, 2.0)

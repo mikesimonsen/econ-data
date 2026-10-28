@@ -38,3 +38,18 @@ presidents:
     name: "Jeffrey R. Schmid"
     institution: "Kansas City"
     verified: false     # last seen as 2025 voter; not confirmed 2026-10-28
+
+# Seats of former participants who appear in vote records since 2021 (the
+# statements give names only).
+former:
+  bostic: "Atlanta"
+  bullard: "St. Louis"
+  evans: "Chicago"
+  george: "Kansas City"
+  harker: "Philadelphia"
+  mester: "Cleveland"
+  brainard: "Board of Governors"
+  clarida: "Board of Governors"
+  quarles: "Board of Governors"
+  kugler: "Board of Governors"
+  miran: "Board of Governors"

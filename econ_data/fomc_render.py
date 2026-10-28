@@ -6,11 +6,19 @@ render_fomc_top()    — next meeting + blackout status, latest decision card,
 render_fomc_bottom() — dot plot + SEP medians (vs prior SEP and FedWatch),
                        committee roster with 2026/2027 voting status,
                        vote record grid
+
+Every visualization carries CSV download buttons shaped for Flourish: one
+header row with units in the column names, plain numbers (percentages as
+0–100, no symbols), ISO dates, wide layout for line charts and long layout
+for scatter/heatmap/filterable charts.
 """
 from __future__ import annotations
 
+import csv
 import difflib
 import html
+import io
+import json
 import re
 from datetime import date, timedelta
 
@@ -22,6 +30,35 @@ BASE = "https://www.federalreserve.gov"
 SEP_LABELS = [("fed_funds", "Fed funds rate"), ("core_pce", "Core PCE inflation"),
               ("pce", "PCE inflation"), ("unemployment", "Unemployment rate"),
               ("gdp", "Real GDP growth")]
+
+
+_DOWNLOAD_JS = (
+    "<script>function fwDownloadCsv(k, f) {"
+    " var c = (window.fwCsv || {})[k]; if (!c) return;"
+    " var a = document.createElement('a');"
+    " a.href = URL.createObjectURL(new Blob([c], {type: 'text/csv'}));"
+    " a.download = f; a.click(); }</script>")
+
+
+def _n(x, nd: int = 2):
+    """Plain CSV number: rounded, blank for missing."""
+    return "" if x is None else round(float(x), nd)
+
+
+def csv_button(key: str, filename: str, header: list, rows: list, label: str = "CSV") -> str:
+    """Download button carrying its CSV inline (no server; the briefing is static)."""
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(header)
+    w.writerows(rows)
+    data = json.dumps(buf.getvalue()).replace("</", "<\\/")
+    return (f'<script>(window.fwCsv = window.fwCsv || {{}})["{key}"] = {data};</script>'
+            f'<button class="btn-export" onclick="fwDownloadCsv(\'{key}\', \'{filename}\')"'
+            f' title="Download {html.escape(filename)}">{html.escape(label)}</button>')
+
+
+def _exports(*buttons: str) -> str:
+    return '<div class="fw-exports">' + " ".join(buttons) + "</div>"
 
 
 def _url(u: str | None) -> str | None:
@@ -166,15 +203,37 @@ def _decision_card(con) -> str:
         f'<strong>FOMC {_span(start, d)}, {d.year}</strong> '
         f'&nbsp;Target range <strong>{_fmt_range(lo, hi) if hi is not None else "?"}</strong> '
         f'&nbsp;Vote <strong>{n_for}–{n_against}</strong></div>'
-        f'{dis_html}<div class="fw-links">{links}</div>{redline}</div>'
+        f'{dis_html}<div class="fw-links">{links}</div>{redline}'
+        f'{_exports(_decisions_csv(con))}</div>'
     )
+
+
+def _decisions_csv(con) -> str:
+    rows = con.execute(
+        "SELECT m.meeting_date, m.decision_bps, m.target_low, m.target_high, m.votes_for, "
+        "m.votes_against, m.has_sep, "
+        "STRING_AGG(p.name || COALESCE(' (' || CASE WHEN v.preferred_bps > 0 THEN '+' "
+        "ELSE '' END || v.preferred_bps || 'bp)', ' (non-rate)'), '; ' ORDER BY p.name) "
+        "FROM fomc_meetings m LEFT JOIN fomc_votes v ON v.meeting_date = m.meeting_date "
+        "AND v.vote = 'against' LEFT JOIN fomc_participants p ON p.id = v.participant_id "
+        "WHERE m.statement_parsed_at IS NOT NULL GROUP BY m.meeting_date ORDER BY 1").fetchall()
+    first, last = rows[0][0].year, rows[-1][0].year
+    return csv_button(
+        "decisions", f"fomc_decisions_{first}-{last}.csv",
+        ["Meeting date", "Decision (bp)", "Target low (%)", "Target high (%)",
+         "Target midpoint (%)", "Votes for", "Votes against", "Dissenters (preferred change)",
+         "Projections released"],
+        [[d.isoformat(), bps, _n(lo), _n(hi), _n((lo + hi) / 2 if hi is not None else None, 3),
+          nf, na, dis or "", "Yes" if sep else "No"]
+         for d, bps, lo, hi, nf, na, sep, dis in rows],
+        label=f"CSV: all decisions since {first}")
 
 
 def render_fomc_top(today: date | None = None) -> str:
     today = today or date.today()
     try:
         con = connect()
-        return _status_banner(con, today) + _decision_card(con)
+        return _DOWNLOAD_JS + _status_banner(con, today) + _decision_card(con)
     except Exception as e:
         return f'<p class="muted">FOMC data unavailable: {html.escape(str(e))}</p>'
 
@@ -333,8 +392,84 @@ def _sep_section(con, today: date) -> str:
         "Dots are anonymous: the Fed does not say whose dot is whose."
     table = (f'<table class="fw-table"><thead><tr><th>Median projection</th>{head}</tr></thead>'
              f'<tbody>{"".join(body)}</tbody></table><p class="muted fw-note">{note}</p>')
+    tag = cur.strftime("%b%Y").lower()
+    x_index = {h: i for i, h in enumerate(horizons)}
+    dot_rows = []
+    for h in horizons:
+        for _, r, n in sorted(d for d in dots if d[0] == h):
+            for k in range(n):
+                # X position stacks dots side by side around each horizon so a
+                # Flourish scatter reproduces the Fed's layout directly.
+                dot_rows.append([h if h != "LR" else "Longer run", x_index[h] + 1,
+                                 round(x_index[h] + 1 + (k - (n - 1) / 2) * 0.04, 3),
+                                 r, k + 1, _n(med_now.get(h)), _n(med_prev.get(h)),
+                                 _n(market.get(h))])
+    rates_desc = sorted({r for _, r, _ in dots}, reverse=True)
+    counts = {(h, r): n for h, r, n in dots}
+    hz_names = ["Longer run" if h == "LR" else h for h in horizons]
+    dot_exports = _exports(
+        csv_button("dots", f"fomc_dot_plot_{tag}.csv",
+                   ["Horizon", "Horizon order", "X position", "Rate (%)", "Dot number",
+                    f"Median {cur.strftime('%b %Y')} (%)",
+                    f"Median {prev_label} (%)" if prev else "Prior median (%)",
+                    "Market-implied (%)"],
+                   dot_rows, label="CSV: one row per dot (scatter)"),
+        csv_button("dotgrid", f"fomc_dot_counts_{tag}.csv",
+                   ["Rate (%)"] + hz_names,
+                   [[r] + [counts.get((h, r), 0) for h in horizons] for r in rates_desc],
+                   label="CSV: count grid (table/heatmap)"))
+
+    sep_rows = []
+    for var, label in SEP_LABELS:
+        rng = {(h): (lo, hi, rl, rh) for v, h, lo, hi, rl, rh in con.execute(
+            "SELECT variable, horizon, ct_lo, ct_hi, range_lo, range_hi FROM sep_projections "
+            "WHERE meeting_date = %s AND variable = %s", (cur, var)).fetchall()}
+        for h in horizons:
+            m = cur_rows.get((var, h))
+            if m is None:
+                continue
+            p = prev_rows.get((var, h))
+            ct_lo, ct_hi, rl, rh = rng.get(h, (None,) * 4)
+            sep_rows.append([label, "Longer run" if h == "LR" else h, _n(m, 1), _n(p, 1),
+                             _n(m - p, 1) if p is not None else "", _n(ct_lo, 1), _n(ct_hi, 1),
+                             _n(rl, 1), _n(rh, 1)])
+    hist = con.execute(
+        "SELECT meeting_date, variable, horizon, median, ct_lo, ct_hi, range_lo, range_hi "
+        "FROM sep_projections ORDER BY meeting_date, variable, horizon").fetchall()
+    var_label = dict(SEP_LABELS)
+    sep_exports = _exports(
+        csv_button("sep", f"fomc_sep_medians_{tag}.csv",
+                   ["Variable", "Horizon", f"Median {cur.strftime('%b %Y')}",
+                    f"Median {prev_label}" if prev else "Prior median", "Change",
+                    "Central tendency low", "Central tendency high", "Range low", "Range high"],
+                   sep_rows, label="CSV: this table"),
+        csv_button("sephist", f"fomc_sep_history_{hist[0][0].year}-{cur.year}.csv",
+                   ["SEP date", "Variable", "Horizon", "Median", "Central tendency low",
+                    "Central tendency high", "Range low", "Range high"],
+                   [[d.isoformat(), var_label.get(v, v), "Longer run" if h == "LR" else h,
+                     _n(m, 1), _n(a, 1), _n(b, 1), _n(c, 1), _n(e, 1)]
+                    for d, v, h, m, a, b, c, e in hist],
+                   label=f"CSV: every SEP since {hist[0][0].year} (long)"),
+        csv_button("seppath", f"fomc_fed_funds_median_path_{hist[0][0].year}-{cur.year}.csv",
+                   *_median_path(hist), label="CSV: fed funds median by SEP (line chart)"))
     return (f'<h3 class="fw-h3">Dot plot: {cur.strftime("%B %Y")} Summary of Economic '
-            f'Projections</h3><div class="fed-chart">{chart}</div>{legend}{table}')
+            f'Projections</h3><div class="fed-chart">{chart}</div>{legend}{dot_exports}'
+            f'{table}{sep_exports}')
+
+
+def _median_path(hist) -> tuple[list, list]:
+    """Wide: one row per SEP, one column per horizon — how the committee's
+    expected year-end fed funds rate evolved, ready for a Flourish line chart."""
+    ff = [(d, h, m) for d, v, h, m, *_ in hist if v == "fed_funds"]
+    horizons = sorted({h for _, h, _ in ff}, key=lambda h: (h == "LR", h))
+    by_sep: dict = {}
+    for d, h, m in ff:
+        by_sep.setdefault(d, {})[h] = m
+    header = ["SEP date"] + [f"End-{h} median (%)" if h != "LR" else "Longer-run median (%)"
+                             for h in horizons]
+    rows = [[d.isoformat()] + [_n(vals.get(h), 3) for h in horizons]
+            for d, vals in sorted(by_sep.items())]
+    return header, rows
 
 
 def _committee(con, today: date) -> str:
@@ -365,7 +500,8 @@ def _committee(con, today: date) -> str:
                 "alternate": '<span class="fw-pill">Alternate</span>'}.get(
             s, '<span class="muted">—</span>')
 
-    rows = []
+    rows, csv_rows = [], []
+    label_of = {"member": "Voter", "alternate": "Alternate"}
     for pid, name, inst, role, appt, term, chair_term, verified, bio in sorted(people, key=key):
         board = inst == "Board of Governors"
         now = voters.get(pid) or ("member" if board else None)
@@ -378,6 +514,11 @@ def _committee(con, today: date) -> str:
         title = html.escape(role or ("Governor" if board else "President"))
         if chair_term:
             title += f' <span class="muted">(to {chair_term.strftime("%b %Y")})</span>'
+        csv_rows.append([name, inst or "", role or ("Governor" if board else "President"),
+                         label_of.get(now, "Non-voter"), label_of.get(nxt, "Non-voter"),
+                         appt or "", term.isoformat() if term else "",
+                         chair_term.isoformat() if chair_term else "",
+                         dissents.get(pid, 0), "Yes" if verified else "No"])
         rows.append(
             f"<tr><td>{nm}</td><td>{html.escape(inst or '')}</td><td>{title}</td>"
             f"<td>{status(now)}</td><td>{status(nxt)}</td>"
@@ -390,7 +531,12 @@ def _committee(con, today: date) -> str:
             f'<th>Appointed by</th><th>Board term ends</th><th>Dissents since {year - 1}</th>'
             f'</tr></thead><tbody>{"".join(rows)}</tbody></table></div>'
             f'<p class="muted fw-note">All 19 participants debate and submit dots; 12 vote. '
-            f'Governors and New York vote every year; four other banks rotate annually.</p>')
+            f'Governors and New York vote every year; four other banks rotate annually.</p>'
+            + _exports(csv_button(
+                "committee", f"fomc_committee_{today.isoformat()}.csv",
+                ["Participant", "Seat", "Title", f"{year} status", f"{year + 1} status",
+                 "Appointed by", "Board term ends", "Leadership term ends",
+                 f"Dissents since {year - 1}", "Verified at source"], csv_rows)))
 
 
 def _vote_grid(con, n_meetings: int = 12) -> str:
@@ -417,6 +563,15 @@ def _vote_grid(con, n_meetings: int = 12) -> str:
 
     head = "".join(f"<th>{_short(d)}<br><span class='muted'>{_fmt_bps(decision[d])}</span></th>"
                    for d in dates)
+
+    def vote_label(vote, pref, dec):
+        if vote == "for":
+            return "For", 0
+        if pref is None:
+            return "Dissent: other grounds", 0.5
+        return ("Dissent: tighter", 1) if pref > (dec or 0) else ("Dissent: easier", -1)
+
+    grid_csv = []
     rows = []
     for pid in sorted(people, key=sort_key):
         name, inst, active = people[pid]
@@ -439,6 +594,9 @@ def _vote_grid(con, n_meetings: int = 12) -> str:
                 else:
                     sym, cls = "▼", "fw-dove"
                 cells.append(f'<td class="{cls}" title="{html.escape(why or "")}">{sym}</td>')
+        grid_csv.append([name, inst or ""] + [
+            vote_label(grid[(pid, d)][0], grid[(pid, d)][1], decision[d])[0]
+            if (pid, d) in grid else "" for d in dates])
         seat = "" if inst in (None, "Board of Governors") else f" <span class='muted'>{html.escape(inst)}</span>"
         rows.append(f"<tr{'' if active else ' class=fw-former'}><td>{html.escape(name)}{seat}</td>"
                     f"{''.join(cells)}</tr>")
@@ -448,13 +606,38 @@ def _vote_grid(con, n_meetings: int = 12) -> str:
             f'<p class="muted fw-note">✓ voted with the majority &nbsp; <span class="fw-hawk">▲</span> '
             f'dissented for tighter policy &nbsp; <span class="fw-dove">▼</span> dissented for '
             f'easier policy &nbsp; <span class="fw-other">◆</span> dissented on other grounds. '
-            f'Hover a mark for the stated reason. Blank = not a voter that meeting.</p>')
+            f'Hover a mark for the stated reason. Blank = not a voter that meeting.</p>'
+            + _exports(
+                csv_button("votegrid", f"fomc_vote_grid_{dates[0].isoformat()}_{dates[-1].isoformat()}.csv",
+                           ["Participant", "Seat"] + [d.isoformat() for d in dates], grid_csv,
+                           label="CSV: grid as shown (table)"),
+                _all_votes_csv(con, vote_label)))
+
+
+def _all_votes_csv(con, vote_label) -> str:
+    rows = con.execute(
+        "SELECT v.meeting_date, p.name, p.institution, v.vote, v.preferred_bps, m.decision_bps, "
+        "v.dissent_text, v.inferred FROM fomc_votes v JOIN fomc_participants p "
+        "ON p.id = v.participant_id JOIN fomc_meetings m ON m.meeting_date = v.meeting_date "
+        "ORDER BY 1, 2").fetchall()
+    out = []
+    for d, name, inst, vote, pref, dec, why, inferred in rows:
+        label, code = vote_label(vote, pref, dec)
+        out.append([d.isoformat(), name, inst or "", label, code, dec,
+                    "" if pref is None else pref, why or "", "Yes" if inferred else "No"])
+    first, last = rows[0][0].year, rows[-1][0].year
+    return csv_button(
+        "votes", f"fomc_votes_{first}-{last}.csv",
+        ["Meeting date", "Participant", "Seat", "Vote", "Vote code", "Decision (bp)",
+         "Preferred change (bp)", "Stated reason", "Inferred from roster"], out,
+        label=f"CSV: every vote since {first} (long, heatmap)")
 
 
 def render_fomc_bottom(today: date | None = None) -> str:
     today = today or date.today()
     try:
         con = connect()
-        return _sep_section(con, today) + _committee(con, today) + _vote_grid(con)
+        return (_DOWNLOAD_JS + _sep_section(con, today) + _committee(con, today)
+                + _vote_grid(con))
     except Exception as e:
         return f'<p class="muted">FOMC data unavailable: {html.escape(str(e))}</p>'

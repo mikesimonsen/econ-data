@@ -596,29 +596,29 @@ def render_fed_chart(db_path: Path = DB_PATH,
     svg.append("</svg>")
 
     # ── Build CSV data for download ─────────────────────────
+    # Wide and Flourish-ready: one column per line (actual vs market path),
+    # percentages 0–100. The last actual row also carries the implied path
+    # so the two lines join in a line chart.
     import csv as csv_mod, io
     csv_buf = io.StringIO()
-    csv_writer = csv_mod.writer(csv_buf)
-    # Historical rows
-    csv_writer.writerow(["date", "type", "rate", "change_pp",
-                         "cut_prob", "hold_prob", "hike_prob"])
-    for d, v in zip(hist_dates, hist_values):
+    csv_writer = csv_mod.writer(csv_buf, lineterminator="\n")
+    csv_writer.writerow(["Date", "Effective fed funds rate (%)", "Market-implied rate (%)",
+                         "Change at FOMC meeting (pp)", "Cut probability (%)",
+                         "Hold probability (%)", "Hike probability (%)"])
+    for i, (d, v) in enumerate(zip(hist_dates, hist_values)):
         ch = changes.get(d.isoformat(), "")
-        csv_writer.writerow([d.isoformat(), "actual", f"{v:.4f}", ch, "", "", ""])
-    # Forward rows
+        joint = f"{v:.4f}" if i == len(hist_dates) - 1 else ""
+        csv_writer.writerow([d.isoformat(), f"{v:.4f}", joint, ch, "", "", ""])
     for m in future_meetings:
-        ms = m.isoformat()
-        exp = expectations.get(ms)
+        exp = expectations.get(m.isoformat())
         implied = forward_dict.get(m, "")
         if exp:
             probs = exp["probabilities"]
             cut = sum(p for bps, p in probs.items() if bps < 0)
             hold = probs.get(0, 0)
             hike = sum(p for bps, p in probs.items() if bps > 0)
-            csv_writer.writerow([ms, "forecast", f"{implied:.4f}" if implied else "",
-                                 "", f"{cut:.3f}", f"{hold:.3f}", f"{hike:.3f}"])
-        else:
-            csv_writer.writerow([ms, "forecast", "", "", "", "", ""])
+            csv_writer.writerow([m.isoformat(), "", f"{implied:.4f}" if implied else "", "",
+                                 f"{cut * 100:.1f}", f"{hold * 100:.1f}", f"{hike * 100:.1f}"])
     fed_csv = csv_buf.getvalue()
 
     # ── Legend + meeting table ───────────────────────────────
@@ -667,11 +667,31 @@ def render_fed_chart(db_path: Path = DB_PATH,
             f'<td>{captured_html}</td></tr>'
         )
 
+    # Full outcome distribution per meeting, one column per outcome —
+    # ready for a Flourish stacked bar.
+    from econ_data.fomc_render import csv_button
+    shown = [m for m in future_meetings[:6] if m.isoformat() in expectations]
+    outcomes = sorted({b for m in shown for b in expectations[m.isoformat()]["probabilities"]})
+    fw_rows = []
+    for m in shown:
+        exp = expectations[m.isoformat()]
+        probs = exp["probabilities"]
+        fw_rows.append([m.isoformat(), exp.get("captured_at", "")[:10]]
+                       + [round(probs.get(b, 0) * 100, 1) for b in outcomes]
+                       + [round(forward_dict[m], 3) if m in forward_dict else ""])
+    fedwatch_btn = csv_button(
+        "fedwatch", f"fedwatch_probabilities_{today.isoformat()}.csv",
+        ["Meeting date", "Captured"]
+        + [("Hold" if b == 0 else f"{b:+d}bp") + " (%)" for b in outcomes]
+        + ["Market-implied rate (%)"],
+        fw_rows) if fw_rows else ""
+
     table_html = (
         '<h3 style="margin-top:1.5em">Upcoming FOMC Meetings</h3>'
         '<table class="fed-table"><tbody>'
         + "\n".join(rows_html)
         + '</tbody></table>'
+        + (f'<div class="fw-exports">{fedwatch_btn}</div>' if fedwatch_btn else "")
     )
 
     target = get_current_target_range(db_path)

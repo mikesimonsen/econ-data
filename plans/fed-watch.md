@@ -81,6 +81,11 @@ materials' Figure 2 table (HTML version), because FRED only carries medians and 
 - **The hardcoded 2027 meeting list was wrong.** Jun/Sep/Oct/Dec were each off
   by a week. FedWatch now reads the scraped calendar; the hardcoded list is a
   corrected fallback only.
+- **Flourish-ready CSV on every visualization** (added after review): decisions
+  since 2021, rate chart (wide), FedWatch distribution, dot plot (per-dot
+  scatter + count grid), SEP table + full SEP history + fed-funds median path,
+  committee, vote grid + every vote since 2021 (long). Phase 2 visualizations
+  must follow the same convention (see CLAUDE.md).
 - Roster facts the Fed doesn't publish (appointing president; presidents not
   on this year's `fomc.htm`) live in `fed_roster.yaml`. St. Louis and Kansas
   City are flagged `verified: false` until confirmed.
