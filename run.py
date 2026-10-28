@@ -9,7 +9,7 @@ Skips post-processing entirely when nothing changed — no point regenerating
 the briefing and pushing a no-op commit on quiet mornings.
 """
 from econ_data.config import all_series, load
-from econ_data.pipeline import fetch_morning, log, post_process
+from econ_data.pipeline import fetch_fomc, fetch_morning, log, post_process
 from econ_data.store import get_last_dates
 
 
@@ -22,6 +22,7 @@ if __name__ == "__main__":
     last_dates = get_last_dates()
 
     result, revisions = fetch_morning(cfg, last_dates, last_checked={})
+    fetch_fomc()
 
     # Always run post_process — sweep_overdue, briefing's "captured today"
     # panel, and the schedule-status summary need to reflect the current

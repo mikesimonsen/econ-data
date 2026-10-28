@@ -628,6 +628,9 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
 
     from econ_data.fed_expectations import render_fed_chart
     fed_chart_html = render_fed_chart(db_path=db_path)
+    from econ_data.fomc_render import render_fomc_bottom, render_fomc_top
+    fomc_top_html = render_fomc_top()
+    fomc_bottom_html = render_fomc_bottom()
 
     source_urls = _build_source_urls(cfg)
 
@@ -670,6 +673,8 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
         upcoming_releases=upcoming_releases,
         schedule_status=schedule_status,
         fed_chart_html=fed_chart_html,
+        fomc_top_html=fomc_top_html,
+        fomc_bottom_html=fomc_bottom_html,
         today_series=today_series,
         recent_series=recent_series,
         revisions_by_series=revisions_by_series,
@@ -698,6 +703,8 @@ def _render_page(**ctx) -> str:
     inflation_charts_html = _render_inflation_charts(ctx)
     employment_charts_html = _render_employment_charts(ctx)
     fed_chart_html = ctx.get("fed_chart_html", "")
+    fomc_top_html = ctx.get("fomc_top_html", "")
+    fomc_bottom_html = ctx.get("fomc_bottom_html", "")
     today_html = _render_today(ctx)
     upcoming_html = _render_upcoming(ctx)
     recent_html = _render_recent(ctx)
@@ -770,8 +777,10 @@ def _render_page(**ctx) -> str:
   </section>
 
   <section id="fed" class="tab-content">
-    <h2 style="margin-top:0">Federal Funds Rate &amp; Market Expectations</h2>
+    {fomc_top_html}
+    <h2>Federal Funds Rate &amp; Market Expectations</h2>
     {fed_chart_html}
+    {fomc_bottom_html}
   </section>
 
   <section id="upcoming" class="tab-content">
@@ -2294,6 +2303,39 @@ def _css() -> str:
 .fed-table { border-collapse: collapse; width: 100%; margin-top: 0.5em; }
 .fed-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .fed-table td:first-child { width: 200px; color: var(--text); }
+.fw-banner { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 13px; color: var(--text-muted); margin-bottom: 1em; line-height: 1.8; }
+.fw-banner strong { color: var(--text); }
+.fw-pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; border: 1px solid var(--border); color: var(--text-muted); }
+.fw-pill-on { border-color: rgba(88, 166, 255, 0.5); color: var(--accent); background: rgba(88, 166, 255, 0.1); }
+.fw-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; margin-bottom: 1.5em; font-size: 14px; }
+.fw-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; }
+.fw-dissents { margin: 0.8em 0 0 1.2em; font-size: 13px; line-height: 1.6; }
+.fw-links { margin-top: 0.8em; font-size: 13px; }
+.fw-links a { color: var(--accent); }
+.fw-details { margin-top: 0.8em; font-size: 13px; }
+.fw-details summary { cursor: pointer; color: var(--text); }
+.fw-redline { margin-top: 0.6em; line-height: 1.7; color: var(--text); max-width: 80ch; }
+.fw-redline p { margin-bottom: 0.8em; }
+.fw-redline del, .fw-details summary del { color: var(--red); background: rgba(248, 81, 73, 0.12); }
+.fw-redline ins, .fw-details summary ins { color: var(--green); background: rgba(63, 185, 80, 0.12); text-decoration: none; border-bottom: 1px solid var(--green); }
+.fw-h3 { margin: 2em 0 0.6em; }
+.fw-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.fw-table th { text-align: left; font-weight: 600; color: var(--text-muted); padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.fw-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.fw-table a { color: var(--text); }
+.fw-table td.fw-wrap { white-space: normal; min-width: 160px; }
+.fw-grid th, .fw-grid td:not(:first-child) { text-align: center; }
+.fw-grid tr.fw-former td { opacity: 0.55; }
+.fw-for { color: var(--text-muted); }
+.fw-hawk { color: var(--red); font-weight: 700; }
+.fw-dove { color: var(--accent); font-weight: 700; }
+.fw-other { color: var(--amber); font-weight: 700; }
+.fw-chg { font-size: 11px; }
+.fw-chg.up { color: var(--red); }
+.fw-chg.down { color: var(--accent); }
+.fw-unverified { font-size: 10px; color: var(--amber); border: 1px solid var(--amber); border-radius: 3px; padding: 0 4px; }
+.fw-note { font-size: 12px; margin-top: 0.5em; }
+.fw-scroll { overflow-x: auto; }
 .prob-chip { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; margin-right: 4px; font-weight: 500; }
 .prob-chip.chip-cut { background: rgba(42, 139, 60, 0.18); color: #3fb950; border: 1px solid rgba(42, 139, 60, 0.4); }
 .prob-chip.chip-hold { background: rgba(136, 136, 136, 0.18); color: #aaa; border: 1px solid rgba(136, 136, 136, 0.4); }

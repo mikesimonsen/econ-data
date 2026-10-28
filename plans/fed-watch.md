@@ -57,6 +57,34 @@ sep_projections     meeting_date, variable, horizon_year, median, range_lo,
 `dot_distribution` = `{rate: count}` per horizon, scraped from the SEP
 materials' Figure 2 table (HTML version), because FRED only carries medians and ranges.
 
+## Status
+
+**Phase 1 shipped 2026-10-28** (`econ_data/fomc.py`, `econ_data/fomc_render.py`,
+`fed_roster.yaml`, `tests/test_fomc.py`). Departures from the design below:
+
+- **SEP comes from the Fed's projection-materials HTML, not FRED.** One page
+  gives Table 1 (median / central tendency / range for all five variables) and
+  the Figure 2 dot counts, and covers every SEP back to 2021.
+- **Target range comes from the parsed statement**, not `DFEDTARU/L`, so no new
+  FRED series were needed. `get_current_target_range()` falls back to DFF.
+- **Backfill is 2021+**, which is what `fomccalendars.htm` covers. That's 47
+  statements and 22 SEPs. 2018–2020 would need the `fomchistorical` pages.
+- **No `release_schedule` rows for FOMC documents.** `fomc.refresh()` costs two
+  page fetches and runs in every cohort (morning, intraday, Sunday), parsing
+  any statement or SEP the calendar links that isn't stored yet. The intraday
+  run regenerates the briefing when one lands.
+- **Statement format changed June 2026** (first Warsh meeting): it now gives a
+  tally ("10 – 2") and names only the dissenters. "For" votes are inferred from
+  `fomc_voters` for that year, flagged `inferred`, and checked against the tally.
+  `fomc_voters` is captured from `fomc.htm` while each year is current, because
+  the page only shows the current year.
+- **The hardcoded 2027 meeting list was wrong.** Jun/Sep/Oct/Dec were each off
+  by a week. FedWatch now reads the scraped calendar; the hardcoded list is a
+  corrected fallback only.
+- Roster facts the Fed doesn't publish (appointing president; presidents not
+  on this year's `fomc.htm`) live in `fed_roster.yaml`. St. Louis and Kansas
+  City are flagged `verified: false` until confirmed.
+
 ## Features, phased
 
 ### Phase 1: Foundation (deterministic, no LLM)

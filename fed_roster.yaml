@@ -1,0 +1,40 @@
+# Fed roster seed — facts the Fed's own pages don't publish in scrapeable form.
+#
+# Everything else (current voters/alternates, titles, Board term-end dates,
+# bios) is scraped by econ_data/fomc.py from federalreserve.gov, which wins on
+# conflict. Keys are participant ids (lowercase last name).
+#
+# verified: false = name not confirmed at a primary source on the date noted;
+# the Fed tab marks these so they get checked. Bank presidents absent from
+# fomc.htm in a given year (neither voter nor alternate) live only here until
+# their rotation year.
+
+appointed_by:
+  # Governors — the U.S. president who appointed them to their current Board seat.
+  warsh: "Trump (2026)"
+  powell: "Obama (2012, 2014); chair: Trump, Biden"
+  jefferson: "Biden (2022)"
+  bowman: "Trump (2018)"
+  barr: "Biden (2022)"
+  cook: "Biden (2022, reappointed 2023)"
+  waller: "Trump (2020)"
+
+# Reserve Bank presidents are appointed by the bank's Class B and C directors,
+# subject to Board of Governors approval — not by the U.S. president.
+president_appointed_by: "Reserve Bank board (Board-approved)"
+
+# Presidents not listed on fomc.htm for the current year (2026: Boston,
+# St. Louis, Kansas City are non-voters and non-alternates).
+presidents:
+  collins:
+    name: "Susan M. Collins"
+    institution: "Boston"
+    verified: true      # bostonfed.org homepage, 2026-10-28
+  musalem:
+    name: "Alberto G. Musalem"
+    institution: "St. Louis"
+    verified: false     # last seen as 2025 voter; not confirmed 2026-10-28
+  schmid:
+    name: "Jeffrey R. Schmid"
+    institution: "Kansas City"
+    verified: false     # last seen as 2025 voter; not confirmed 2026-10-28

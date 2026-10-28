@@ -31,9 +31,10 @@ load_dotenv()
 
 # ── FOMC Meeting Calendar ────────────────────────────────────
 # Two-day meetings; the rate decision is announced on the second day.
+# The live calendar is scraped into fomc_meetings by econ_data/fomc.py; this
+# list is only the fallback if that table is empty or unreachable.
 # Source: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
-# Update annually as the Fed publishes the next year's schedule.
-FOMC_MEETINGS = [
+_FALLBACK_MEETINGS = [
     # 2024
     "2024-01-31", "2024-03-20", "2024-05-01", "2024-06-12",
     "2024-07-31", "2024-09-18", "2024-11-07", "2024-12-18",
@@ -44,9 +45,20 @@ FOMC_MEETINGS = [
     "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17",
     "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
     # 2027
-    "2027-01-27", "2027-03-17", "2027-04-28", "2027-06-16",
-    "2027-07-28", "2027-09-22", "2027-11-03", "2027-12-15",
+    "2027-01-27", "2027-03-17", "2027-04-28", "2027-06-09",
+    "2027-07-28", "2027-09-15", "2027-10-27", "2027-12-08",
 ]
+
+
+def _meetings() -> list[str]:
+    try:
+        from econ_data.fomc import meeting_dates
+        dates = meeting_dates()
+        if dates:
+            return [d.isoformat() for d in dates]
+    except Exception:
+        pass
+    return _FALLBACK_MEETINGS
 
 
 def _connect(db_path: Path = DB_PATH):
@@ -58,7 +70,7 @@ def get_past_meetings(today: date | None = None) -> list[date]:
     """Return all FOMC meetings on or before today."""
     if today is None:
         today = date.today()
-    return [date.fromisoformat(d) for d in FOMC_MEETINGS
+    return [date.fromisoformat(d) for d in _meetings()
             if date.fromisoformat(d) <= today]
 
 
@@ -67,7 +79,7 @@ def get_future_meetings(today: date | None = None,
     """Return upcoming FOMC meetings (next N)."""
     if today is None:
         today = date.today()
-    future = [date.fromisoformat(d) for d in FOMC_MEETINGS
+    future = [date.fromisoformat(d) for d in _meetings()
               if date.fromisoformat(d) > today]
     return future[:limit]
 
@@ -90,7 +102,7 @@ def get_meeting_changes(db_path: Path = DB_PATH) -> dict[str, float]:
     sorted_dates = sorted(by_date.keys())
 
     result = {}
-    for meeting_str in FOMC_MEETINGS:
+    for meeting_str in _meetings():
         m = date.fromisoformat(meeting_str)
         if m > date.today():
             continue
@@ -126,11 +138,16 @@ def _nearest_value(by_date: dict, sorted_dates: list,
 
 
 def get_current_target_range(db_path: Path = DB_PATH) -> tuple[float, float] | None:
-    """Estimate current Fed Funds target range from recent DFF observations.
-
-    The Fed sets a 25bp target range; the effective rate trades within it.
-    We round the latest DFF reading down to the nearest 25bp lower bound.
+    """Current Fed Funds target range — from the latest parsed FOMC statement,
+    falling back to rounding the latest DFF reading down to a 25bp bound.
     """
+    try:
+        from econ_data.fomc import latest_target_range
+        rng = latest_target_range()
+        if rng:
+            return rng
+    except Exception:
+        pass
     row = connect().execute(
         "SELECT value FROM observations WHERE series_id = 'DFF' "
         "ORDER BY date DESC LIMIT 1"
@@ -484,7 +501,7 @@ def render_fed_chart(db_path: Path = DB_PATH,
 
     # ── Past FOMC meeting dots ──────────────────────────────
     changes = get_meeting_changes(db_path)
-    for meeting_str in FOMC_MEETINGS:
+    for meeting_str in _meetings():
         m = date.fromisoformat(meeting_str)
         if m > today or m < x_start:
             continue
@@ -516,7 +533,7 @@ def render_fed_chart(db_path: Path = DB_PATH,
                        f'</circle>')
 
     # ── Future FOMC meetings + probability bars ─────────────
-    future_meetings = [date.fromisoformat(m) for m in FOMC_MEETINGS
+    future_meetings = [date.fromisoformat(m) for m in _meetings()
                        if today < date.fromisoformat(m) <= end_date]
     forward_dict = {d: r for d, r in forward_points}
 

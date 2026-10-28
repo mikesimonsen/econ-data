@@ -56,6 +56,21 @@ def log(msg: str = "") -> None:
     print(f"[{ts}] {msg}", flush=True)
 
 
+def fetch_fomc() -> int:
+    """Scrape the FOMC calendar/roster and any newly published statement or
+    SEP (econ_data/fomc.py). Returns the count of newly parsed documents.
+    Never raises — a Fed site hiccup must not take down the data pipeline."""
+    log("Refreshing FOMC calendar, statements, SEP...")
+    try:
+        from econ_data.fomc import refresh
+        n = refresh(log=log)
+        log(f"  → {n} new FOMC document{'s' if n != 1 else ''}")
+        return n
+    except Exception as e:
+        log(f"  → FOMC refresh FAILED: {e}")
+        return 0
+
+
 def _format_revisions(revisions: list) -> str:
     if not revisions:
         return ""

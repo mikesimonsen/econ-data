@@ -63,6 +63,16 @@ if __name__ == "__main__":
     except Exception as e:
         log(f"  → FAILED: {e}")
 
+    # Before FedWatch: get_future_meetings() reads the scraped calendar.
+    log("Refreshing FOMC calendar, roster + governor bios...")
+    try:
+        from econ_data.fomc import refresh, refresh_roster
+        refresh(log=log)
+        n_bio = refresh_roster(log=log)
+        log(f"  → {n_bio} governor bios refreshed")
+    except Exception as e:
+        log(f"  → FAILED: {e}")
+
     log("Refreshing CME FedWatch probabilities...")
     try:
         from econ_data.fed_expectations import fetch_all_upcoming

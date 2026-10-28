@@ -1,5 +1,6 @@
 """Intraday entrypoint (fired 1 / 3 / 4 PM ET). Picks up MND's daily mortgage
-rate posting and sweeps any FRED series still due-but-uncaptured today — FRED
+rate posting, FOMC statements on decision days, and sweeps any FRED series
+still due-but-uncaptured today — FRED
 often posts a 10 AM ET release to its API only in the early afternoon, after
 the morning cohort's last (GitHub-Actions-delayed) fetch.
 
@@ -7,7 +8,7 @@ Skips post-processing entirely when nothing changed — no point regenerating
 the briefing and pushing a no-op commit on quiet afternoons.
 """
 from econ_data.config import all_series, load
-from econ_data.pipeline import fetch_intraday, log, post_process
+from econ_data.pipeline import fetch_fomc, fetch_intraday, log, post_process
 from econ_data.store import get_last_dates
 
 
@@ -21,7 +22,12 @@ if __name__ == "__main__":
 
     result, revisions = fetch_intraday(cfg, last_dates)
 
-    if not result["new"] and not revisions:
+    # FOMC statements post at 2:00 PM ET on decision days; the 3 and 4 PM
+    # firings pick them up and must regenerate the briefing even when no
+    # FRED series moved.
+    fomc_new = fetch_fomc()
+
+    if not result["new"] and not revisions and not fomc_new:
         log("Nothing new — skipping post-processing.")
     else:
         post_process(cfg, series, result, revisions)
