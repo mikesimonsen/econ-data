@@ -50,6 +50,7 @@ pytest
 - `econ_data/store.py` — Postgres-backed CRUD over `observations`, `groups`, `revisions`, etc. (`store_sqlite.py` is the legacy SQLite path, retained but unused.)
 - `econ_data/release_schedule.py` — release-calendar-driven scheduling (see "Scheduling" below).
 - `econ_data/fomc.py` / `fomc_render.py` — Fed Watch: scrapes federalreserve.gov for FOMC calendar, statements + votes, SEP/dot plot, and roster into `fomc_*` / `sep_*` tables; renders the Fed tab sections. Roster facts the Fed doesn't publish live in `fed_roster.yaml`. Design + status: `plans/fed-watch.md`.
+- `econ_data/fed_speeches.py` / `fed_people_render.py` — Fed Watch phase 2: governor remarks from the Fed's speech/testimony JSON, presidents' from each Reserve Bank's sitemap/listing (`BANK_SOURCES`), stance-scored by Claude (`prompts/fed_speech_analysis.txt`) into `comm_analysis`, weekly member profiles (`prompts/fed_member_profile.txt`); renders the spectrum, movers, speakers and profiles. Backfills: `submit_batch()` + `collect_batch()`.
 - `econ_data/calculations.py` — computes `period_pct` and `yoy_pct` derived series for every tracked series.
 - `econ_data/pipeline.py` — orchestrates fetch → save → mark_captured → sweep_overdue → analyses → briefing → push.
 - `run.py` / `run_intraday.py` / `run_calendar.py` — entrypoints. The cron in `.github/workflows/cron.yml` fires Fly machines for each cohort.

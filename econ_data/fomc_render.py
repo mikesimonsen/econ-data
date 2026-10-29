@@ -506,9 +506,7 @@ def _committee(con, today: date) -> str:
         board = inst == "Board of Governors"
         now = voters.get(pid) or ("member" if board else None)
         nxt = "member" if board else rotation.get(inst)
-        nm = html.escape(name)
-        if bio:
-            nm = f'<a href="{_url(bio)}" target="_blank">{nm}</a>'
+        nm = f'<a href="#member-{pid}">{html.escape(name)}</a>'
         if not verified:
             nm += ' <span class="fw-unverified" title="Not confirmed at a primary source — check fed_roster.yaml">unverified</span>'
         title = html.escape(role or ("Governor" if board else "President"))

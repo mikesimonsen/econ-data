@@ -71,6 +71,21 @@ def fetch_fomc() -> int:
         return 0
 
 
+def fetch_fed_speeches() -> int:
+    """New Fed remarks (Board feeds every run, bank sites once a day) and their
+    stance scoring (econ_data/fed_speeches.py). Returns remarks scored.
+    Never raises, like fetch_fomc."""
+    log("Refreshing Fed speeches + stance scoring...")
+    try:
+        from econ_data.fed_speeches import refresh
+        n = refresh(log=log)
+        log(f"  → {n} remark{'s' if n != 1 else ''} scored")
+        return n
+    except Exception as e:
+        log(f"  → Fed speeches FAILED: {e}")
+        return 0
+
+
 def _format_revisions(revisions: list) -> str:
     if not revisions:
         return ""

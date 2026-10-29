@@ -90,6 +90,26 @@ materials' Figure 2 table (HTML version), because FRED only carries medians and 
   on this year's `fomc.htm`) live in `fed_roster.yaml`. St. Louis and Kansas
   City are flagged `verified: false` until confirmed.
 
+**Phase 2 shipped 2026-10-28** (`econ_data/fed_speeches.py`,
+`econ_data/fed_people_render.py`, `prompts/fed_speech_analysis.txt`,
+`prompts/fed_member_profile.txt`, `tests/test_fed_speeches.py`). Departures:
+
+- **Presidents come from each bank's own sitemap or speech listing**
+  (`BANK_SOURCES`), not BIS or web search. BIS carried no Fed speakers. A
+  web-search test found nothing for Logan while her bank's page listed 7
+  speeches, and daily search would have cost ~$50/month. Web search remains a
+  weekly fallback for any president with nothing found in 45 days.
+- **Backfill:** governors 2023+ (389 speeches/testimony via the Fed's JSON),
+  presidents since 2026-05-01 (38). 442 scored via the Batch API; 980 quotes,
+  all verified verbatim against the text.
+- **No LLM "shift vs prior" field.** Movement is computed from scores (90-day
+  windows; "who's moving" = a remark ≥0.75 off the speaker's own prior 90-day
+  average, ≥0.5 for the Chair, Vice Chair and NY president).
+- **Known gaps:** media interviews and video-only Q&As (e.g. Kashkari's recent
+  panels) aren't captured; presidents' remarks before May 2026 aren't loaded.
+- Profiles get every meeting the member voted at, with the committee's
+  decision, not only dissents.
+
 ## Features, phased
 
 ### Phase 1: Foundation (deterministic, no LLM)

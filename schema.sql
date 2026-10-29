@@ -236,3 +236,74 @@ CREATE TABLE IF NOT EXISTS sep_dots (
     n            INTEGER          NOT NULL,
     PRIMARY KEY (meeting_date, horizon, rate)
 );
+
+-- ── Fed Watch phase 2 (econ_data/fed_speeches.py) ─────────────────────────
+-- One row per speech / testimony / essay. id = 'c' + sha1(url)[:16] (also the
+-- Batch API custom_id). full_text is NULL when the source site refused a plain
+-- fetch; analysis then reads the page through Claude's web_fetch tool.
+CREATE TABLE IF NOT EXISTS fed_communications (
+    id             TEXT PRIMARY KEY,
+    participant_id TEXT        NOT NULL,
+    comm_date      DATE        NOT NULL,
+    kind           TEXT        NOT NULL,   -- speech | testimony | essay | remarks
+    title          TEXT        NOT NULL,
+    venue          TEXT,
+    url            TEXT        NOT NULL UNIQUE,
+    source         TEXT        NOT NULL,   -- frb_speeches | frb_testimony | web_search
+    full_text      TEXT,
+    discovered_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS fed_communications_pid_idx
+    ON fed_communications (participant_id, comm_date);
+
+-- LLM read of each communication (prompt: prompts/fed_speech_analysis.txt).
+-- hawk_dove: -2 (strongly dovish) … +2 (strongly hawkish); NULL when the
+-- remarks carry no monetary-policy signal (e.g. a pure supervision speech).
+-- key_quotes are verified verbatim against full_text when we have it.
+CREATE TABLE IF NOT EXISTS comm_analysis (
+    comm_id         TEXT PRIMARY KEY REFERENCES fed_communications(id) ON DELETE CASCADE,
+    policy_content  TEXT             NOT NULL,  -- none | light | substantial
+    hawk_dove       DOUBLE PRECISION,
+    confidence      TEXT,
+    rate_view       TEXT,                       -- cut | hold | hike | unclear
+    rate_horizon    TEXT,
+    headline        TEXT,
+    summary         TEXT,
+    topics          JSONB,
+    framework_tags  JSONB,
+    key_quotes      JSONB,
+    model           TEXT             NOT NULL,
+    prompt_version  TEXT             NOT NULL,
+    analyzed_at     TIMESTAMPTZ      NOT NULL DEFAULT NOW()
+);
+
+-- Per-member framework profile (prompt: prompts/fed_member_profile.txt),
+-- regenerated weekly for members with new analyzed remarks.
+CREATE TABLE IF NOT EXISTS member_profiles (
+    participant_id TEXT PRIMARY KEY,
+    profile_md     TEXT        NOT NULL,
+    n_sources      INTEGER     NOT NULL,
+    latest_comm    DATE,
+    model          TEXT        NOT NULL,
+    prompt_version TEXT        NOT NULL,
+    generated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Upcoming Board appearances from federalreserve.gov/json/calendar.json.
+CREATE TABLE IF NOT EXISTS fed_appearances (
+    event_date     DATE NOT NULL,
+    event_time     TEXT,
+    participant_id TEXT,
+    speaker        TEXT NOT NULL,
+    format         TEXT,          -- Speech | Discussion | Testimony …
+    topic          TEXT,
+    location       TEXT,
+    PRIMARY KEY (event_date, speaker, location)
+);
+
+-- Bookkeeping for once-a-day jobs (president speech discovery).
+CREATE TABLE IF NOT EXISTS job_runs (
+    job        TEXT PRIMARY KEY,
+    last_run   TIMESTAMPTZ NOT NULL,
+    detail     TEXT
+);

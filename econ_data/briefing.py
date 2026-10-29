@@ -629,8 +629,9 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
     from econ_data.fed_expectations import render_fed_chart
     fed_chart_html = render_fed_chart(db_path=db_path)
     from econ_data.fomc_render import render_fomc_bottom, render_fomc_top
-    fomc_top_html = render_fomc_top()
-    fomc_bottom_html = render_fomc_bottom()
+    from econ_data.fed_people_render import render_people_bottom, render_people_top
+    fomc_top_html = render_fomc_top() + render_people_top()
+    fomc_bottom_html = render_fomc_bottom() + render_people_bottom()
 
     source_urls = _build_source_urls(cfg)
 
@@ -2337,6 +2338,23 @@ def _css() -> str:
 .fw-note { font-size: 12px; margin-top: 0.5em; }
 .fw-scroll { overflow-x: auto; }
 .fw-exports { display: flex; flex-wrap: wrap; gap: 6px; margin: 0.6em 0 0.4em; }
+.fw-chip { display: inline-block; min-width: 2.6em; text-align: center; padding: 1px 6px; border-radius: 10px; font-size: 11px; font-weight: 700; border: 1px solid var(--border); }
+.fw-chip-hawk { color: var(--red); border-color: rgba(248, 81, 73, 0.5); background: rgba(248, 81, 73, 0.1); }
+.fw-chip-dove { color: var(--accent); border-color: rgba(88, 166, 255, 0.5); background: rgba(88, 166, 255, 0.1); }
+.fw-chip-mid { color: var(--text-muted); }
+.fw-chip-none { color: var(--text-muted); font-weight: 400; opacity: 0.7; }
+.fw-movers ul { margin: 0.6em 0 0 1.2em; line-height: 1.7; }
+.fw-movers a, .fw-member a, .fw-upcoming a, .fw-remarks a { color: var(--accent); }
+.fw-sub { margin: 1em 0 0.4em; font-size: 13px; color: var(--text-muted); font-weight: 600; }
+.fw-upcoming, .fw-remarks { margin: 0.3em 0 0 1.2em; font-size: 13px; line-height: 1.7; }
+.fw-member { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin: 6px 0; background: var(--surface); }
+.fw-member summary { cursor: pointer; font-size: 14px; }
+.fw-member[open] summary { margin-bottom: 0.6em; }
+.fw-prof-h { margin: 1em 0 0.4em; font-size: 13px; color: var(--text); }
+.fw-profile .analysis-p, .fw-prof-ul { font-size: 14px; line-height: 1.6; margin-bottom: 0.5em; max-width: 85ch; }
+.fw-prof-ul { margin-left: 1.2em; }
+.fw-quote { border-left: 3px solid var(--border); padding: 4px 10px; margin: 6px 0; font-size: 13px; color: var(--text); max-width: 85ch; }
+.fw-traj { max-width: 680px; }
 .prob-chip { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; margin-right: 4px; font-weight: 500; }
 .prob-chip.chip-cut { background: rgba(42, 139, 60, 0.18); color: #3fb950; border: 1px solid rgba(42, 139, 60, 0.4); }
 .prob-chip.chip-hold { background: rgba(136, 136, 136, 0.18); color: #aaa; border: 1px solid rgba(136, 136, 136, 0.4); }

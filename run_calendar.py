@@ -73,6 +73,13 @@ if __name__ == "__main__":
     except Exception as e:
         log(f"  → FAILED: {e}")
 
+    log("Fed speeches weekly: web-search fallback + member profiles...")
+    try:
+        from econ_data.fed_speeches import weekly
+        weekly(log=log)
+    except Exception as e:
+        log(f"  → FAILED: {e}")
+
     log("Refreshing CME FedWatch probabilities...")
     try:
         from econ_data.fed_expectations import fetch_all_upcoming

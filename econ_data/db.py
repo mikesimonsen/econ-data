@@ -37,3 +37,25 @@ def connect() -> psycopg.Connection:
     if _conn is None or _conn.closed:
         _conn = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True)
     return _conn
+
+
+_last_checked = 0.0
+
+
+def connect_checked(max_idle: float = 60.0) -> psycopg.Connection:
+    """connect() for callers that spend minutes on network I/O between
+    queries (scrapers). Neon drops idle connections, and a dropped socket
+    still reports closed=False — even a probe query would hang until the OS
+    TCP timeout. So after `max_idle` seconds without a checked call, replace
+    the connection outright instead of probing it."""
+    global _conn, _last_checked
+    import time
+    now = time.monotonic()
+    if _conn is not None and now - _last_checked > max_idle:
+        try:
+            _conn.close()
+        except Exception:
+            pass
+        _conn = None
+    _last_checked = now
+    return connect()
