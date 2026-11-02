@@ -26032,7 +26032,7 @@ date,Effective Federal Funds Rate (Daily) YoY Chg,Effective Federal Funds Rate (
 2026-09-28,-0.21,
 2026-09-29,-0.21,
 2026-09-30,-0.21,
-2026-10-01,-0.21,
+2026-10-01,-0.21,-0.21
 2026-10-02,-0.21,
 2026-10-03,-0.21,
 2026-10-04,-0.21,
@@ -26061,3 +26061,4 @@ date,Effective Federal Funds Rate (Daily) YoY Chg,Effective Federal Funds Rate (
 2026-10-27,-0.24,
 2026-10-28,-0.24,
 2026-10-29,-0.24,
+2026-10-30,0.01,
