@@ -81,8 +81,10 @@ CREATE TABLE IF NOT EXISTS fed_expectations (
     outcome_bps  INTEGER          NOT NULL,
     probability  DOUBLE PRECISION NOT NULL,
     captured_at  TIMESTAMPTZ      NOT NULL,
+    source_text  TEXT,                        -- raw model answer (debugging)
     PRIMARY KEY (meeting_date, outcome_bps)
 );
+ALTER TABLE fed_expectations ADD COLUMN IF NOT EXISTS source_text TEXT;
 
 CREATE TABLE IF NOT EXISTS release_calendar (
     release_date DATE        NOT NULL,

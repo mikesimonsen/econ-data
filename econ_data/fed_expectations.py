@@ -8,9 +8,11 @@ Claude web search and stored in the fed_expectations table.
 Storage:
   fed_expectations table — one row per (meeting_date, outcome_bps)
     meeting_date: ISO date of the FOMC decision day
-    outcome_bps:  rate change in basis points (-50, -25, 0, 25, 50)
+    outcome_bps:  cumulative rate change in basis points from the current
+                  target range (-50, -25, 0, 25, 50, ...)
     probability:  market-implied probability (0..1)
     captured_at:  when this snapshot was taken
+    source_text:  the model's raw answer the row was parsed from
 """
 from __future__ import annotations
 
@@ -162,10 +164,12 @@ def get_current_target_range(db_path: Path = DB_PATH) -> tuple[float, float] | N
 
 def store_expectations(meeting_date: str,
                        probabilities: dict[int, float],
-                       db_path: Path = DB_PATH) -> None:
+                       db_path: Path = DB_PATH,
+                       source_text: str | None = None) -> None:
     """Store CME FedWatch probabilities for a meeting.
 
     probabilities: {outcome_bps: probability}, e.g. {-25: 0.40, 0: 0.60}
+    source_text: the model's raw answer, kept so a bad row can be explained.
     """
     con = connect()
     now = datetime.now()
@@ -177,9 +181,9 @@ def store_expectations(meeting_date: str,
         for bps, prob in probabilities.items():
             con.execute(
                 "INSERT INTO fed_expectations "
-                "(meeting_date, outcome_bps, probability, captured_at) "
-                "VALUES (%s, %s, %s, %s)",
-                (meeting_date, int(bps), float(prob), now),
+                "(meeting_date, outcome_bps, probability, captured_at, source_text) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (meeting_date, int(bps), float(prob), now, source_text),
             )
 
 
@@ -198,23 +202,39 @@ def get_expectations(db_path: Path = DB_PATH) -> dict[str, dict]:
     return result
 
 
-def fetch_fedwatch_probabilities(meeting_date: date) -> dict[int, float] | None:
+# FedWatch publishes a probability per post-meeting *target range*. We ask the
+# model for exactly that and convert to bps-from-current in code: when the
+# model did the conversion itself it sometimes assumed the wrong current range
+# (e.g. 4.25–4.50 instead of 3.75–4.00), shifting every outcome by 50bp.
+_RANGES_FORMAT = (
+    '{"ranges": {"3.25-3.50": 0.10, "3.50-3.75": 0.60, "3.75-4.00": 0.30}}'
+)
+
+
+def fetch_fedwatch_probabilities(meeting_date: date,
+                                 current_range: tuple[float, float] | None = None,
+                                 ) -> tuple[dict[int, float], str] | None:
     """Use Claude web search to fetch CME FedWatch probabilities.
 
-    Returns {outcome_bps: probability} or None if not found.
-    Outcomes are rate changes from current target: -50, -25, 0, +25, +50
+    Returns ({outcome_bps: probability}, raw_model_text) or None if not found.
+    Outcomes are cumulative rate changes from the current target range.
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
+    current_range = current_range or get_current_target_range()
+    if not current_range:
+        print("  No current target range known — can't convert FedWatch ranges")
+        return None
+    current_low = current_range[0]
 
     meeting_label = meeting_date.strftime("%B %d, %Y")
     ask = (
         f"What does CME FedWatch currently show for the FOMC meeting on "
-        f"{meeting_label}? I need the implied probabilities for each "
-        f"possible rate decision (no change, -25bp cut, -50bp cut, "
-        f"+25bp hike, etc.) based on Fed Funds futures pricing.\n\n"
-        f"Return the probabilities as percentages."
+        f"{meeting_label}? I need the implied probability of each possible "
+        f"target rate range after that meeting (e.g. 3.75-4.00%, "
+        f"4.00-4.25%), based on Fed Funds futures pricing. Report the "
+        f"full distribution, including the current range."
     )
 
     client = anthropic.Anthropic(api_key=api_key, timeout=60.0)
@@ -231,17 +251,18 @@ def fetch_fedwatch_probabilities(meeting_date: date) -> dict[int, float] | None:
             system=(
                 "You are extracting CME FedWatch implied probabilities for "
                 "FOMC rate decisions. Search the web for the current "
-                "(real-time) probabilities, then respond with ONLY a JSON "
-                "object in this exact format:\n\n"
-                '{"probabilities": {"-50": 0.05, "-25": 0.40, "0": 0.55, '
-                '"+25": 0.00}, "source": "<source URL or name>"}\n\n'
+                "(real-time) target-rate probabilities, then respond with "
+                "ONLY a JSON object in this exact format:\n\n"
+                + _RANGES_FORMAT[:-1] + ', "source": "<source URL or name>"}\n\n'
                 "Rules:\n"
-                "- Keys are rate changes in basis points: -50, -25, 0, +25, +50\n"
+                "- Keys are post-meeting target ranges in percent, "
+                "\"lower-upper\", exactly as FedWatch lists them\n"
+                "- Do NOT convert to rate changes; report the ranges\n"
                 "- Values are decimal probabilities (0..1) — NOT percentages\n"
-                "- Probabilities should sum to ~1.0\n"
-                "- Only include outcomes with probability > 0\n"
+                "- Include every range with probability > 0; they should "
+                "sum to ~1.0\n"
                 "- If you cannot find current data, respond with "
-                '{"probabilities": null, "source": "not found"}'
+                '{"ranges": null, "source": "not found"}'
             ),
             messages=[{"role": "user", "content": ask}],
         )
@@ -251,24 +272,25 @@ def fetch_fedwatch_probabilities(meeting_date: date) -> dict[int, float] | None:
 
     full_text = "\n".join(b.text for b in msg.content if hasattr(b, "text"))
 
-    parsed = _normalize_probs(full_text)
+    parsed = _normalize_ranges(full_text, current_low)
     if parsed:
-        return parsed
+        return parsed, full_text
 
     # Web-search responses often come back as prose + markdown tables
     # rather than JSON. Fall back to a no-tools extraction pass that
     # converts the prose to the strict JSON shape we need.
-    return _extract_probs_from_text(client, full_text)
+    parsed = _extract_ranges_from_text(client, full_text, current_low)
+    return (parsed, full_text) if parsed else None
 
 
-def _normalize_probs(text: str) -> dict[int, float] | None:
-    """Parse JSON (or JSON embedded in markdown / prose) and return
-    {bps: prob} if valid, else None."""
+def _parse_json_object(text: str, key: str) -> dict | None:
+    """Find a JSON object (bare, fenced, or embedded in prose) whose first
+    key is `key`."""
     import re
     candidates = [text]
     for m in re.finditer(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL):
         candidates.append(m.group(1).strip())
-    for sm in re.finditer(r'\{\s*"probabilities"', text):
+    for sm in re.finditer(r'\{\s*"' + key + '"', text):
         depth = 0
         for i in range(sm.start(), len(text)):
             if text[i] == "{":
@@ -278,53 +300,66 @@ def _normalize_probs(text: str) -> dict[int, float] | None:
                 if depth == 0:
                     candidates.append(text[sm.start():i + 1])
                     break
-
-    result = None
     for cand in candidates:
         try:
             result = json.loads(cand)
-            break
         except (json.JSONDecodeError, ValueError, TypeError):
             continue
-    if result is None:
-        return None
-    probs = result.get("probabilities") if isinstance(result, dict) else None
-    if not probs:
-        return None
-    normalized = {}
-    for k, v in probs.items():
-        try:
-            key = int(str(k).lstrip("+"))
-        except ValueError:
-            continue
-        if v and v > 0:
-            normalized[key] = float(v)
-    if not normalized:
-        return None
-    total = sum(normalized.values())
-    if 0.9 <= total <= 1.1:
-        return normalized
+        if isinstance(result, dict):
+            return result
     return None
 
 
-def _extract_probs_from_text(client: "anthropic.Anthropic",
-                             prose: str) -> dict[int, float] | None:
+def _normalize_ranges(text: str, current_low: float) -> dict[int, float] | None:
+    """Parse {"ranges": {"lower-upper": prob}} and return {bps: prob}, with
+    bps measured from current_low (the current range's lower bound).
+
+    Rejects the snapshot unless every range is a 25bp-aligned bucket and the
+    probabilities sum to ~1 — a dropped outcome (the extraction pass once
+    omitted a 4.8% "no change") must fail rather than store a skewed row.
+    """
+    import re
+    result = _parse_json_object(text, "ranges")
+    ranges = result.get("ranges") if result else None
+    if not ranges:
+        return None
+    normalized: dict[int, float] = {}
+    for k, v in ranges.items():
+        m = re.match(r"\s*(\d+(?:\.\d+)?)\s*%?\s*[-–—]", str(k))
+        if not m or not isinstance(v, (int, float)):
+            return None
+        bps = round((float(m.group(1)) - current_low) * 100)
+        if bps % 25:
+            return None
+        if v > 0:
+            normalized[bps] = normalized.get(bps, 0.0) + float(v)
+    if not normalized:
+        return None
+    if not 0.97 <= sum(normalized.values()) <= 1.03:
+        return None
+    return normalized
+
+
+def _extract_ranges_from_text(client: "anthropic.Anthropic", prose: str,
+                              current_low: float) -> dict[int, float] | None:
     """Second-pass extractor: convert prose/table output to strict JSON."""
     if not prose.strip():
         return None
     try:
         msg = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=200,
+            max_tokens=300,
             system=(
-                "Extract CME FedWatch probabilities from the user's text. "
-                "Output exactly one JSON object and nothing else. No prose, "
-                "no markdown, no code fences. Begin your response with { "
-                "and end with }. Format:\n"
-                '{"probabilities": {"-25": 0.28, "0": 0.70, "+25": 0.02}}\n'
-                "Keys are basis-point rate changes (-50,-25,0,+25,+50); "
-                "values are decimal probabilities (0..1). Only include "
-                "outcomes with probability > 0."
+                "Extract CME FedWatch target-rate probabilities from the "
+                "user's text. Output exactly one JSON object and nothing "
+                "else. No prose, no markdown, no code fences. Begin your "
+                "response with { and end with }. Format:\n"
+                + _RANGES_FORMAT + "\n"
+                "Keys are the post-meeting target ranges in percent, "
+                "\"lower-upper\", copied from the text's target-range table "
+                "— never from a rate-change column. Values are decimal "
+                "probabilities (0..1). Include every range listed with "
+                "probability > 0, including the no-change range."
             ),
             messages=[{"role": "user", "content": prose}],
         )
@@ -332,7 +367,7 @@ def _extract_probs_from_text(client: "anthropic.Anthropic",
         print(f"  Extraction pass failed: {e}")
         return None
     text = "\n".join(b.text for b in msg.content if hasattr(b, "text")).strip()
-    return _normalize_probs(text)
+    return _normalize_ranges(text, current_low)
 
 
 def render_fed_chart(db_path: Path = DB_PATH,
@@ -762,16 +797,36 @@ def fetch_all_upcoming(limit: int = 6, db_path: Path = DB_PATH) -> int:
     Returns count of meetings successfully updated.
     """
     meetings = get_future_meetings(limit=limit)
-    updated = 0
+    current_range = get_current_target_range()
+    results = {}
     for m in meetings:
         print(f"  Fetching probabilities for {m}...")
-        probs = fetch_fedwatch_probabilities(m)
-        if probs:
-            store_expectations(m.isoformat(), probs, db_path)
-            updated += 1
-            top = max(probs.items(), key=lambda x: x[1])
-            print(f"    → most likely: {top[0]:+}bp ({top[1]*100:.0f}%)")
-        else:
+        results[m] = fetch_fedwatch_probabilities(m, current_range)
+        if not results[m]:
             print(f"    → not found")
         time.sleep(1)
+
+    # Web search can't always find a table for distant meetings and will
+    # reuse another meeting's. Identical distributions for different meetings
+    # mean at most one is real and we can't tell which: drop them all, and
+    # clear their old rows rather than leave a stale snapshot on the chart.
+    seen: dict[tuple, list[date]] = {}
+    for m, fetched in results.items():
+        if fetched:
+            key = tuple(sorted((b, round(p, 3)) for b, p in fetched[0].items()))
+            seen.setdefault(key, []).append(m)
+    duplicated = {m for ms in seen.values() if len(ms) > 1 for m in ms}
+
+    updated = 0
+    for m, fetched in results.items():
+        if m in duplicated:
+            print(f"  {m}: same distribution as another meeting — discarded")
+            connect().execute("DELETE FROM fed_expectations WHERE meeting_date = %s",
+                              (m.isoformat(),))
+        elif fetched:
+            probs, source_text = fetched
+            store_expectations(m.isoformat(), probs, db_path, source_text)
+            updated += 1
+            top = max(probs.items(), key=lambda x: x[1])
+            print(f"  {m}: most likely {top[0]:+}bp ({top[1]*100:.0f}%)")
     return updated
