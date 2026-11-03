@@ -5,15 +5,15 @@ Run weekly (or before/after FOMC meetings) to capture market-implied
 rate change probabilities. Stored in the fed_expectations table.
 
 Usage:
-    python fetch_fed_expectations.py              # next 6 meetings
-    python fetch_fed_expectations.py --limit 4    # next 4 meetings
+    python fetch_fed_expectations.py              # next 2 meetings (FEDWATCH_HORIZON)
+    python fetch_fed_expectations.py --limit 1    # next meeting only
     python fetch_fed_expectations.py --show       # show stored expectations
 """
 import argparse
 from datetime import datetime
 
 from econ_data.fed_expectations import (
-    fetch_all_upcoming, get_expectations, get_future_meetings,
+    FEDWATCH_HORIZON, fetch_all_upcoming, get_expectations, get_future_meetings,
 )
 
 
@@ -34,8 +34,8 @@ def show():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--limit", type=int, default=6,
-                        help="Number of upcoming meetings to fetch (default: 6)")
+    parser.add_argument("--limit", type=int, default=FEDWATCH_HORIZON,
+                        help=f"Number of upcoming meetings to fetch (default: {FEDWATCH_HORIZON})")
     parser.add_argument("--show", action="store_true",
                         help="Show stored expectations")
     args = parser.parse_args()

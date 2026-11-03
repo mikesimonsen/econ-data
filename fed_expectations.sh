@@ -16,7 +16,7 @@ echo "[$NOW] Refreshing release calendar..." >> "$LOG"
     >> "$LOG" 2>&1
 
 # Fetch FedWatch probabilities
-/opt/homebrew/bin/gtimeout 600 /Users/mikesimonsen/projects/econ-data/.venv/bin/python fetch_fed_expectations.py --limit 6 \
+/opt/homebrew/bin/gtimeout 600 /Users/mikesimonsen/projects/econ-data/.venv/bin/python fetch_fed_expectations.py \
     >> "$LOG" 2>&1
 EXIT=$?
 

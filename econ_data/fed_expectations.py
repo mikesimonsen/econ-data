@@ -791,12 +791,21 @@ def render_fed_chart(db_path: Path = DB_PATH,
     return target_str + chart_html + export_buttons + legend + table_html + fed_js
 
 
-def fetch_all_upcoming(limit: int = 6, db_path: Path = DB_PATH) -> int:
+# Web search reliably finds FedWatch odds for the next couple of meetings only;
+# further out it returns another meeting's table or answers that change run to
+# run. Rows past this horizon are cleared rather than left to go stale.
+FEDWATCH_HORIZON = 2
+
+
+def fetch_all_upcoming(limit: int = FEDWATCH_HORIZON, db_path: Path = DB_PATH) -> int:
     """Fetch CME FedWatch probabilities for the next N FOMC meetings.
 
     Returns count of meetings successfully updated.
     """
     meetings = get_future_meetings(limit=limit)
+    if meetings:
+        connect().execute("DELETE FROM fed_expectations WHERE meeting_date > %s",
+                          (meetings[-1].isoformat(),))
     current_range = get_current_target_range()
     results = {}
     for m in meetings:
