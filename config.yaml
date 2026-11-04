@@ -770,6 +770,9 @@ groups:
       - id: FACTSET_CY_EARNINGS_GROWTH
         name: "S&P 500 Current Year Earnings Growth Estimate"
         units: percent
+      - id: FACTSET_NY_EARNINGS_GROWTH
+        name: "S&P 500 Next Year Earnings Growth Estimate"
+        units: percent
       - id: FACTSET_NEXT_Q_EARNINGS_GROWTH
         name: "S&P 500 Next-Quarter Earnings Growth Estimate"
         units: percent

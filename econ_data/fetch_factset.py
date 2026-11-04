@@ -3,10 +3,10 @@
 Source: FactSet publishes a free weekly "Earnings Insight" report on Fridays.
 URL pattern: advantage.factset.com/.../EarningsInsight_MMDDYY.pdf
 
-We extract four headline metrics from the "Forward Estimates & Valuation"
+We extract five headline metrics from the "Forward Estimates & Valuation"
 section (page 14 in current editions): forward 12M P/E, trailing 12M P/E,
-current-calendar-year earnings growth estimate, and next-quarter earnings
-growth estimate. These are the most-cited bottom-up consensus numbers on
+current- and next-calendar-year earnings growth estimates, and next-quarter
+earnings growth estimate. These are the most-cited bottom-up consensus numbers on
 Wall Street and complement Multpl's monthly trailing reported EPS.
 
 The PDF date stamp is taken from the filename, not the document body —
@@ -36,6 +36,7 @@ SERIES = {
     "FACTSET_FWD_PE_12M": "S&P 500 Forward 12M P/E Ratio",
     "FACTSET_TTM_PE_12M": "S&P 500 Trailing 12M P/E Ratio",
     "FACTSET_CY_EARNINGS_GROWTH": "S&P 500 Current Year Earnings Growth Estimate",
+    "FACTSET_NY_EARNINGS_GROWTH": "S&P 500 Next Year Earnings Growth Estimate",
     "FACTSET_NEXT_Q_EARNINGS_GROWTH": "S&P 500 Next-Quarter Earnings Growth Estimate",
 }
 
@@ -98,11 +99,6 @@ def _parse_metrics(pdf_bytes: bytes) -> dict:
         "FACTSET_TTM_PE_12M": (
             r"trailing\s+" + twelve_month + r"\s+P/E\s+ratio\s+is\s+" + num
         ),
-        # "For CY 2026, analysts are projecting earnings growth of 21.0%"
-        "FACTSET_CY_EARNINGS_GROWTH": (
-            r"For\s+CY\s+\d{4},?\s+analysts\s+are\s+projecting\s+earnings\s+"
-            r"growth\s+of\s+" + num + r"\s*%"
-        ),
         # First "For Q# 20YY, analysts are projecting earnings growth of X%"
         # — this is the next reporting quarter (the "current quarter" section
         # uses "are reporting" not "are projecting").
@@ -120,6 +116,23 @@ def _parse_metrics(pdf_bytes: bytes) -> dict:
                 out[sid] = float(m.group(1))
             except ValueError:
                 pass
+
+    # "For CY 2026, analysts are projecting earnings growth of 32.9% ...
+    #  For CY 2027, analysts are projecting earnings growth of 16.3%"
+    # The first CY mentioned is the current year; CY+1 is next year. These
+    # series are rolling (current/next), so both shift a year each January.
+    cy_pat = (
+        r"For\s+CY\s+(\d{4}),?\s+analysts\s+are\s+projecting\s+earnings\s+"
+        r"growth\s+of\s+" + num + r"\s*%"
+    )
+    by_year: dict = {}
+    for m in re.finditer(cy_pat, text, re.IGNORECASE):
+        by_year.setdefault(int(m.group(1)), float(m.group(2)))
+    if by_year:
+        cy = next(iter(by_year))
+        out["FACTSET_CY_EARNINGS_GROWTH"] = by_year[cy]
+        if cy + 1 in by_year:
+            out["FACTSET_NY_EARNINGS_GROWTH"] = by_year[cy + 1]
     return out
 
 
