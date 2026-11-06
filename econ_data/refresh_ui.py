@@ -14,25 +14,28 @@ def refresh_widget() -> str:
 
 _CSS = """
 <style>
-.rf-btn { margin-left: 6px; padding: 0 5px; font-size: 13px; line-height: 18px;
-  border: 1px solid #b8c0cc; border-radius: 4px; background: #fff; color: #33415c;
-  cursor: pointer; }
-.rf-btn:hover, .rf-btn:focus { background: #e8edf5; }
+.rf-btn { margin-left: 6px; padding: 0 4px; font-size: 12px; line-height: 15px;
+  vertical-align: middle; border: 1px solid var(--border); border-radius: 4px;
+  background: none; color: var(--text-muted); cursor: pointer; }
+.rf-btn:hover, .rf-btn:focus { color: var(--accent); border-color: var(--accent); }
 .rf-panel { position: fixed; right: 16px; bottom: 16px; z-index: 1000;
   width: 340px; max-width: calc(100vw - 32px); box-sizing: border-box;
-  padding: 12px 14px; background: #fff; color: #1b2433; font-size: 14px;
-  line-height: 1.4; border: 1px solid #b8c0cc; border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0,0,0,.18); }
+  padding: 12px 14px; background: var(--surface); color: var(--text); font-size: 14px;
+  line-height: 1.4; border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.45); }
 .rf-title { font-weight: 600; padding-right: 22px; overflow-wrap: anywhere; }
-.rf-stage { margin-top: 4px; color: #55617a; }
+.rf-stage { margin-top: 4px; color: var(--text-muted); }
 .rf-msg { margin-top: 8px; overflow-wrap: anywhere; }
-.rf-msg.rf-bad { color: #b02a37; }
-.rf-msg.rf-good { color: #146c43; }
+.rf-msg:empty { display: none; }
+.rf-msg.rf-bad { color: var(--red); }
+.rf-msg.rf-good { color: var(--green); }
 .rf-close { position: absolute; top: 6px; right: 8px; border: 0; background: none;
-  font-size: 18px; line-height: 1; color: #55617a; cursor: pointer; }
+  font-size: 18px; line-height: 1; color: var(--text-muted); cursor: pointer; }
 .rf-panel input { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 5px;
-  font-size: 16px; }
-.rf-action { margin-top: 8px; padding: 4px 10px; font-size: 14px; cursor: pointer; }
+  font-size: 16px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; }
+.rf-action { margin-top: 8px; padding: 4px 10px; font-size: 14px; cursor: pointer;
+  background: none; color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
 </style>
 """
 
@@ -181,7 +184,7 @@ _JS = """
 
   function start(sid) {
     clearTimeout(pollTimer);
-    openPanel("Refreshing " + sid);
+    openPanel(sid);
     stage.textContent = STAGES.starting;
     api("/refresh", { method: "POST", body: JSON.stringify({ series_id: sid }) }).then(function (r) {
       if (r.status === 401) return badKey();
@@ -201,7 +204,7 @@ _JS = """
 
   function addButtons() {
     document.querySelectorAll("tr.series-row[data-sid]").forEach(function (row) {
-      var cell = row.querySelector("td");
+      var cell = row.querySelector(".series-id");
       var sid = row.getAttribute("data-sid");
       if (!cell || cell.querySelector(".rf-btn")) return;
       var button = el("button", "rf-btn", "\\u21bb");
@@ -254,7 +257,7 @@ _JS = """
     var active = null;
     try { active = JSON.parse(read(ACTIVE_NAME)); } catch (e) {}
     if (active && active.id) {
-      openPanel("Refreshing " + active.sid);
+      openPanel(active.sid);
       stage.textContent = "Checking status...";
       poll(active.sid, active.id);
     }
