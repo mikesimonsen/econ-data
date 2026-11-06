@@ -83,6 +83,13 @@ State transitions:
 - `OVERDUE` → `DELAYED` when a human acknowledges (e.g. gov shutdown). DELAYED
   rows are skipped by alerting.
 
+`reconcile_schedule()` runs before the sweep and closes open rows dated before
+the latest period's capture (they're superseded). `get_overdue()` lists one entry
+per series, and only if it has gone longer than its normal gap between new
+periods, since FRED calendars can be denser than the series (FEDFUNDS).
+Observations are always saved before a row is marked `CAPTURED`. The pipeline and
+Postgres session run in ET (`econ_data/__init__.py`, `db.connect()`).
+
 The briefing's "Upcoming" tab shows the live status: captured today, overdue
 (expected data not yet captured), upcoming next 7 days.
 

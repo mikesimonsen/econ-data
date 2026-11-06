@@ -454,6 +454,51 @@ def mark_captured(series_id: str, period_end: date,
     return cur.rowcount > 0
 
 
+def reconcile_schedule() -> int:
+    """Close open rows dated before the latest period's capture. That data has
+    already superseded them, so nothing further is coming for those dates.
+    FRED's calendar lists dates when a given series doesn't update (FEDFUNDS
+    sits on the daily H.15 calendar), and mark_captured only closes one row per
+    observation, so these otherwise pile up as OVERDUE forever.
+
+    Rows dated on the capture day itself stay open: a daily series may still
+    have today's value coming. captured_at stays NULL so these don't appear as
+    "captured today". DELAYED rows are a human decision and are left alone.
+    """
+    cur = connect().execute(
+        """
+        WITH latest AS (
+            SELECT DISTINCT ON (series_id) series_id, captured_at::date AS captured_on
+            FROM observations ORDER BY series_id, date DESC
+        )
+        UPDATE release_schedule r SET
+            status = 'CAPTURED',
+            notes = COALESCE(r.notes, 'superseded: later data already captured'),
+            updated_at = NOW()
+        FROM latest l
+        WHERE r.series_id = l.series_id
+          AND r.status IN ('PENDING', 'OVERDUE')
+          AND r.scheduled_release < l.captured_on
+        """
+    )
+    return cur.rowcount
+
+
+def is_really_late(obs_dates: list[date], last_captured: Optional[date],
+                   grace_days: int, today: date) -> bool:
+    """Has it been longer than this series' normal gap since its last new period?
+
+    Guards against calendars denser than the series: a monthly series on a
+    daily release calendar has an OVERDUE row within days of every capture,
+    though its next value isn't due for weeks. obs_dates are newest first.
+    """
+    if last_captured is None or len(obs_dates) < 2:
+        return True
+    gaps = sorted((obs_dates[i] - obs_dates[i + 1]).days
+                  for i in range(len(obs_dates) - 1))
+    return (today - last_captured).days > gaps[len(gaps) // 2] + grace_days
+
+
 def sweep_overdue(today: Optional[date] = None) -> list[dict]:
     """Mark stale PENDING rows as OVERDUE. Returns the rows newly transitioned."""
     today = today or date.today()
@@ -475,19 +520,45 @@ def sweep_overdue(today: Optional[date] = None) -> list[dict]:
 # Read helpers (briefing + summary)
 # ─────────────────────────────────────────────────────────────────────────
 
-def get_overdue() -> list[dict]:
-    rows = connect().execute(
+def get_overdue(today: Optional[date] = None) -> list[dict]:
+    """One entry per series that is genuinely late, oldest first. The entry is
+    its earliest missed release; `missed` counts how many are open."""
+    today = today or date.today()
+    con = connect()
+    open_rows = con.execute(
         """
-        SELECT series_id, scheduled_release::text, grace_days,
-               EXTRACT(DAY FROM NOW() - scheduled_release::timestamp)::int AS days_late,
-               notes
+        SELECT DISTINCT ON (series_id) series_id, scheduled_release, grace_days, notes,
+               COUNT(*) OVER (PARTITION BY series_id) AS missed
         FROM release_schedule WHERE status = 'OVERDUE'
-        ORDER BY scheduled_release ASC
+        ORDER BY series_id, scheduled_release ASC
         """
     ).fetchall()
-    return [{"series_id": r[0], "scheduled_release": r[1],
-             "grace_days": r[2], "days_late": r[3], "notes": r[4]}
-            for r in rows]
+    if not open_rows:
+        return []
+
+    history: dict[str, list] = {}
+    for sid, d, captured_at in con.execute(
+        """
+        SELECT series_id, date, captured_at FROM (
+            SELECT series_id, date, captured_at,
+                   ROW_NUMBER() OVER (PARTITION BY series_id ORDER BY date DESC) AS rn
+            FROM observations WHERE series_id = ANY(%s)
+        ) recent WHERE rn <= 12 ORDER BY series_id, date DESC
+        """,
+        ([r[0] for r in open_rows],),
+    ).fetchall():
+        history.setdefault(sid, []).append((d, captured_at))
+
+    out = []
+    for sid, scheduled, grace, notes, missed in open_rows:
+        obs = history.get(sid, [])
+        last_captured = obs[0][1].date() if obs else None
+        if is_really_late([d for d, _ in obs], last_captured, grace, today):
+            out.append({"series_id": sid, "scheduled_release": scheduled.isoformat(),
+                        "grace_days": grace, "days_late": (today - scheduled).days,
+                        "notes": notes, "missed": missed})
+    out.sort(key=lambda r: (r["scheduled_release"], r["series_id"]))
+    return out
 
 
 def get_captured_today() -> list[dict]:

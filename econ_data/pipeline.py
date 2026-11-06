@@ -109,19 +109,22 @@ def _empty_result() -> dict:
             "captured_advanced": []}
 
 
-def _mark_captured(observations: list, advanced: list) -> None:
-    """Advance release_schedule for each observation that arrived. Called after
-    every save() so the schedule's PENDING/CAPTURED state stays in sync. The
-    FRED fetcher (fetch_all) calls mark_captured itself; this helper handles
-    everything else (NAR, MND, BLS, Altos, etc.). Appends to `advanced` for
+def _mark_captured(observations: list, advanced: list,
+                   source_updated: dict | None = None) -> None:
+    """Advance release_schedule for each observation that arrived. Must be
+    called after save(): a CAPTURED row is never fetched again, so marking first
+    would lose the release if the run died in between. Appends to `advanced` for
     each obs that actually transitioned a PENDING/OVERDUE row — that's the
-    truthful 'we captured something new' signal used downstream."""
+    truthful 'we captured something new' signal used downstream.
+    source_updated: optional {series_id: when the source published it}."""
     if not observations:
         return
     from econ_data.release_schedule import mark_captured
+    source_updated = source_updated or {}
     for obs in observations:
         try:
-            if mark_captured(obs.series_id, obs.date):
+            if mark_captured(obs.series_id, obs.date,
+                             source_last_updated=source_updated.get(obs.series_id)):
                 advanced.append(obs.series_id)
         except Exception as e:
             log(f"  (mark_captured {obs.series_id}: {e})")
@@ -158,6 +161,7 @@ def fetch_morning(cfg: dict, last_dates: dict, last_checked: dict) -> tuple[dict
     fred = fred_series(cfg)
     log(f"Fetching FRED ({len(fred)} series, only those due)...")
     fred_result = fetch_all(fred, last_dates=last_dates, last_checked=last_checked)
+    fred_new = list(fred_result["new"])  # before NAR is folded in; NAR is already marked
 
     # Fold NAR counts into the FRED result so summary picks them up.
     for sid, n in nar["counts"].items():
@@ -179,6 +183,7 @@ def fetch_morning(cfg: dict, last_dates: dict, last_checked: dict) -> tuple[dict
                 f"({r['pct_change']:+.2f}%)")
     if all_fetched:
         save(all_fetched)
+    _mark_captured(fred_new, result["captured_advanced"], fred_result["source_updated"])
 
     _merge(result, fred_result)
 
@@ -325,6 +330,8 @@ def fetch_intraday(cfg: dict, last_dates: dict) -> tuple[dict, list]:
                 f"({r['pct_change']:+.2f}%)")
     if all_fetched:
         save(all_fetched)
+    _mark_captured(fred_result["new"], result["captured_advanced"],
+                   fred_result["source_updated"])
     _merge(result, fred_result)
 
     # Recompute derived series — MND just changed, and a freshly-swept DGS10
@@ -390,7 +397,10 @@ def post_process(cfg: dict, series: list, result: dict, revisions: list) -> None
     save_groups(cfg)
 
     log("Sweeping release_schedule for overdue releases...")
-    from econ_data.release_schedule import sweep_overdue, get_overdue
+    from econ_data.release_schedule import reconcile_schedule, sweep_overdue, get_overdue
+    superseded = reconcile_schedule()
+    if superseded:
+        log(f"Closed {superseded} schedule rows superseded by later data.")
     newly_overdue = sweep_overdue()
     if newly_overdue:
         log(f"Marked {len(newly_overdue)} releases OVERDUE this run.")

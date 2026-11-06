@@ -124,19 +124,37 @@ def fetch_series_with_revisions(series_id: str, name: str,
     ]
 
 
+def _source_last_updated(series_id: str):
+    """When FRED last updated this series, or None if that can't be read. Only
+    used for the publication-to-capture lag, so a failure must not cost us the
+    observation itself."""
+    try:
+        info = Fred(api_key=os.environ["FRED_API_KEY"]).get_series_info(series_id)
+        # pandas because FRED's hours-only offset ("-06") doesn't parse with %z.
+        return pd.Timestamp(info["last_updated"]).to_pydatetime()
+    except Exception:
+        return None
+
+
 def fetch_all(series: list, last_dates: dict = None,
               force: bool = False, **_compat) -> dict:
     """Fetch updates for all (series_id, name) pairs.
 
     Scheduling is driven by the release_schedule table — a series is only
     queried if it has a PENDING/OVERDUE row whose scheduled_release <= today.
-    On capture, mark_captured advances the schedule. Series whose latest
-    release has already been captured are skipped without an API call.
+    Series whose latest release has already been captured are skipped without
+    an API call.
+
+    This does not touch the schedule: the caller must save() first and then
+    mark the new observations captured. A row marked CAPTURED is never fetched
+    again, so marking before the save would lose the release if the run died
+    in between.
 
     last_dates: {series_id: date} of the most recent observation in the DB.
     force: if True, bypass schedule check (intraday retry of fetch_errors).
     Returns {"new": [Observation, ...], "counts": {series_id: int},
-             "checked": [series_id, ...], "all_fetched": [Observation, ...]}
+             "checked": [series_id, ...], "all_fetched": [Observation, ...],
+             "source_updated": {series_id: datetime}}
     counts:  >0 = new observations,  0 = no new data or skipped,  -1 = error
 
     Also maintains the fetch_errors table: records a row on exception, deletes
@@ -144,7 +162,7 @@ def fetch_all(series: list, last_dates: dict = None,
     """
     # Local imports to avoid a circular import at module load time.
     from econ_data.store import clear_fetch_error, record_fetch_error
-    from econ_data.release_schedule import series_due_now, mark_captured
+    from econ_data.release_schedule import series_due_now
 
     if last_dates is None:
         last_dates = {}
@@ -153,7 +171,7 @@ def fetch_all(series: list, last_dates: dict = None,
     all_fetched = []
     counts = {}
     checked = []
-    captured_advanced: list = []
+    source_updated = {}
     fetched = 0
 
     for series_id, name in series:
@@ -192,15 +210,10 @@ def fetch_all(series: list, last_dates: dict = None,
             fetched += 1
             clear_fetch_error(series_id)
 
-            # Advance the schedule for each new period that arrived. If FRED
-            # had no new data, nothing was captured — the PENDING row stays
-            # so the next cron firing retries. mark_captured returns True
-            # when it actually transitioned a PENDING/OVERDUE row, which is
-            # the truthful "we captured something new" signal used downstream
-            # to gate LLM regen.
-            for obs in new_only:
-                if mark_captured(series_id, obs.date):
-                    captured_advanced.append(series_id)
+            if new_only:
+                updated_at = _source_last_updated(series_id)
+                if updated_at:
+                    source_updated[series_id] = updated_at
         except Exception as e:
             ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"[{ts}] SKIPPED {series_id} — {e}")
@@ -213,4 +226,4 @@ def fetch_all(series: list, last_dates: dict = None,
                 print(f"[{ts}] (could not record fetch_error for {series_id}: {rec_err})")
 
     return {"new": all_new, "counts": counts, "checked": checked,
-            "all_fetched": all_fetched, "captured_advanced": captured_advanced}
+            "all_fetched": all_fetched, "source_updated": source_updated}

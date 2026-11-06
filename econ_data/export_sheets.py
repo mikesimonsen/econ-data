@@ -8,7 +8,7 @@ Writes a manifest (last_updated.json) so consumers can skip unchanged groups.
 
 import csv
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from econ_data.config import diff_series, load as load_config, percent_series
@@ -208,7 +208,8 @@ def write_manifest(updated_groups: list, manifest_path: Path = MANIFEST_PATH):
     else:
         manifest = {}
 
-    now = datetime.now().isoformat(timespec="seconds")
+    # Explicit UTC: Apps Script string-compares these against toISOString().
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     for gid in updated_groups:
         manifest[gid] = now
 

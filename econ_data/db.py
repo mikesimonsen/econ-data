@@ -36,6 +36,10 @@ def connect() -> psycopg.Connection:
     global _conn
     if _conn is None or _conn.closed:
         _conn = psycopg.connect(os.environ["DATABASE_URL"], autocommit=True)
+        # Match the process clock (see econ_data/__init__.py). Naive
+        # datetime.now() values written to TIMESTAMPTZ columns are interpreted
+        # in this zone, and CURRENT_DATE / captured_at::date follow it.
+        _conn.execute("SET TIME ZONE 'America/New_York'")
     return _conn
 
 
