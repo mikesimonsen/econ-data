@@ -52,6 +52,7 @@ Stages: requested, machine started, fetching, saved, rendering, pushed, live.
 | SOURCE_ERROR | Fetch failed; shows the actual error |
 | REJECTED | Sanity guard dropped the value (the Case-Shiller case) |
 | NEEDS_MANUAL | Source relies on a manual import, so the cloud can't get it |
+| DERIVED | Calculated from other series, so refresh its inputs instead |
 | SYSTEM_ERROR | Machine didn't start, or a render/push step failed |
 
 ## Rules
@@ -59,9 +60,11 @@ Stages: requested, machine started, fetching, saved, rendering, pushed, live.
 - **Access:** the page is public, so the button appears only in a browser holding
   a key stored once on that device. The key never goes in the repo, the service
   checks it on every request, and status output is behind the same key.
-- **One run at a time:** a Postgres advisory lock; later clicks queue and the
-  running job drains the queue. Test what a late cron's `machine update` does to
-  a running machine, since that is a live risk today.
+- **One run at a time:** a lease row in Postgres (`pipeline_lease`), not an
+  advisory lock, because Neon drops idle connections. Each refresh runs on its
+  own one-off machine and waits for the lease, so a late cron's `machine update`
+  can't touch it. Whether that update can disturb a running *cron* machine is
+  still untested, and goes away when the crons are retired.
 - **Retiring GitHub crons:** only after the watchdog has a proven record. Until
   then they stay as a backstop.
 

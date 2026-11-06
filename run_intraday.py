@@ -10,6 +10,7 @@ the briefing and pushing a no-op commit on quiet afternoons.
 from econ_data.config import all_series, load
 from econ_data.pipeline import (fetch_fed_speeches, fetch_fomc, fetch_intraday, log,
                                 post_process)
+from econ_data.run_lock import scheduled_run_lock
 from econ_data.store import get_last_dates
 
 
@@ -19,19 +20,20 @@ if __name__ == "__main__":
 
     log("=== Econ Data Fetch (intraday) ===\n")
 
-    last_dates = get_last_dates()
+    with scheduled_run_lock("run_intraday.py", log):
+        last_dates = get_last_dates()
 
-    result, revisions = fetch_intraday(cfg, last_dates)
+        result, revisions = fetch_intraday(cfg, last_dates)
 
-    # FOMC statements post at 2:00 PM ET on decision days; the 3 and 4 PM
-    # firings pick them up and must regenerate the briefing even when no
-    # FRED series moved.
-    fomc_new = fetch_fomc()
-    speeches_new = fetch_fed_speeches()
+        # FOMC statements post at 2:00 PM ET on decision days; the 3 and 4 PM
+        # firings pick them up and must regenerate the briefing even when no
+        # FRED series moved.
+        fomc_new = fetch_fomc()
+        speeches_new = fetch_fed_speeches()
 
-    if not result["new"] and not revisions and not fomc_new and not speeches_new:
-        log("Nothing new — skipping post-processing.")
-    else:
-        post_process(cfg, series, result, revisions)
+        if not result["new"] and not revisions and not fomc_new and not speeches_new:
+            log("Nothing new — skipping post-processing.")
+        else:
+            post_process(cfg, series, result, revisions)
 
     log("Done.")

@@ -53,6 +53,7 @@ pytest
 - `econ_data/fed_speeches.py` / `fed_people_render.py` — Fed Watch phase 2: governor remarks from the Fed's speech/testimony JSON, presidents' from each Reserve Bank's sitemap/listing (`BANK_SOURCES`), stance-scored by Claude (`prompts/fed_speech_analysis.txt`) into `comm_analysis`, weekly member profiles (`prompts/fed_member_profile.txt`); renders the spectrum, movers, speakers and profiles. Backfills: `submit_batch()` + `collect_batch()`.
 - `econ_data/calculations.py` — computes `period_pct` and `yoy_pct` derived series for every tracked series.
 - `econ_data/pipeline.py` — orchestrates fetch → save → mark_captured → sweep_overdue → analyses → briefing → push.
+- `web/server.py` + `econ_data/refresh.py` / `refresh_ui.py` — the page's refresh button: an always-on Fly app (`econ-data-web`, `fly.web.toml`) starts a one-off machine running `run_refresh.py`, which records a per-series verdict in `refresh_requests`. `econ_data/run_lock.py` keeps pipeline runs from overlapping. Design + status: `plans/manual-refresh.md`.
 - `run.py` / `run_intraday.py` / `run_calendar.py` — entrypoints. The cron in `.github/workflows/cron.yml` fires Fly machines for each cohort.
 
 `FRED_API_KEY` and `DATABASE_URL` are loaded from `.env` via `python-dotenv`.

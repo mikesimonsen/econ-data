@@ -10,6 +10,7 @@ Three building blocks:
 """
 from __future__ import annotations
 
+import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -51,9 +52,20 @@ from econ_data.summary import (
 )
 
 
+_log_hook = None
+
+
+def set_log_hook(hook) -> None:
+    """Run hook on every log line. The refresh job uses it as a heartbeat."""
+    global _log_hook
+    _log_hook = hook
+
+
 def log(msg: str = "") -> None:
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{ts}] {msg}", flush=True)
+    if _log_hook:
+        _log_hook()
 
 
 def fetch_fomc() -> int:
@@ -363,11 +375,26 @@ def fetch_intraday(cfg: dict, last_dates: dict) -> tuple[dict, list]:
 # Post-processing — calculations, summaries, briefing, export, push
 # ─────────────────────────────────────────────────────────────────────────
 
-def post_process(cfg: dict, series: list, result: dict, revisions: list) -> None:
+def recompute_derived(result: dict) -> None:
+    """Recompute series calculated from others, after their inputs changed."""
+    for compute in (compute_spread, compute_affordability, compute_rolling,
+                    compute_regional):
+        derived = compute(last_dates=get_last_dates())
+        if derived["new"]:
+            save(derived["new"])
+        _merge(result, derived)
+
+
+def post_process(cfg: dict, series: list, result: dict, revisions: list,
+                 build_stamp: dict | None = None) -> dict:
     """Run calculations, regenerate summaries/analyses/briefing, export sheets,
     commit and push. Both entrypoints call this; the intraday entrypoint skips
-    this entirely when nothing changed."""
+    this entirely when nothing changed.
+
+    build_stamp: published as docs/build.json so a refresh can confirm when
+    GitHub Pages is serving its build. Returns {"briefing_ok", "pushed"}."""
     today = datetime.now().strftime("%Y-%m-%d")
+    outcome = {"briefing_ok": False, "pushed": False}
     counts = result["counts"]
 
     updated, current, errors = [], [], []
@@ -562,6 +589,9 @@ def post_process(cfg: dict, series: list, result: dict, revisions: list) -> None
         docs_dir.mkdir(exist_ok=True)
         (docs_dir / "index.html").write_text(briefing_html)
         log(f"Briefing saved to {briefing_path} + docs/index.html")
+        outcome["briefing_ok"] = True
+        if build_stamp:
+            (docs_dir / "build.json").write_text(json.dumps(build_stamp) + "\n")
     except Exception as e:
         log(f"Briefing generation failed: {e}")
 
@@ -598,6 +628,7 @@ def post_process(cfg: dict, series: list, result: dict, revisions: list) -> None
             )
             if push.returncode == 0:
                 log("Pushed to GitHub.")
+                outcome["pushed"] = True
                 break
             stderr = push.stderr.decode() if push.stderr else ""
             if "rejected" in stderr or "fetch first" in stderr:
@@ -620,3 +651,5 @@ def post_process(cfg: dict, series: list, result: dict, revisions: list) -> None
                 f"{e.stderr.decode().strip() if e.stderr else e}")
     except FileNotFoundError:
         log("Git not available — skipping push.")
+
+    return outcome

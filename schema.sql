@@ -127,6 +127,35 @@ CREATE INDEX IF NOT EXISTS release_schedule_status_idx
 CREATE INDEX IF NOT EXISTS release_schedule_due_idx
     ON release_schedule (scheduled_release) WHERE status IN ('PENDING','OVERDUE');
 
+-- Manual refresh requests from the page button (plans/manual-refresh.md).
+-- stage: requested, starting, started, waiting, fetching, saved, rendering,
+-- pushed, live, done, failed. finished_at NULL means still active.
+CREATE TABLE IF NOT EXISTS refresh_requests (
+    id           UUID        PRIMARY KEY,
+    series_id    TEXT        NOT NULL,
+    stage        TEXT        NOT NULL DEFAULT 'requested',
+    verdict      JSONB,
+    error        TEXT,
+    machine_id   TEXT,
+    build_epoch  BIGINT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    heartbeat_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at  TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS refresh_requests_one_active_idx
+    ON refresh_requests (series_id) WHERE finished_at IS NULL;
+CREATE INDEX IF NOT EXISTS refresh_requests_created_idx
+    ON refresh_requests (created_at);
+
+-- One pipeline run at a time, so runs can't collide when rendering and pushing.
+-- A lease rather than an advisory lock because Neon drops idle connections,
+-- which would silently release a session-level lock mid-run.
+CREATE TABLE IF NOT EXISTS pipeline_lease (
+    name       TEXT        PRIMARY KEY,
+    holder     TEXT        NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
+);
+
 -- Maps each FRED series to its release_id (FRED's grouping for batch
 -- publications like "Employment Situation" or "New Residential Sales").
 -- Populated once via fred/series/release; cached forever (release_id is

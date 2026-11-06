@@ -16,6 +16,7 @@ from pathlib import Path
 
 from econ_data.config import fred_series
 from econ_data.db import connect
+from econ_data.refresh_ui import refresh_widget
 from econ_data.store import DB_PATH, get_recent_revisions
 from econ_data.summary import generate_summary
 
@@ -810,6 +811,7 @@ var releaseDates = {release_dates_json};
 {_js()}
 </script>
 <script data-goatcounter="https://mikesimonsen.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+{refresh_widget()}
 </body>
 </html>"""
 

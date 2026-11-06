@@ -154,7 +154,8 @@ def fetch_all(series: list, last_dates: dict = None,
     force: if True, bypass schedule check (intraday retry of fetch_errors).
     Returns {"new": [Observation, ...], "counts": {series_id: int},
              "checked": [series_id, ...], "all_fetched": [Observation, ...],
-             "source_updated": {series_id: datetime}}
+             "source_updated": {series_id: datetime},
+             "rejected": [series_id, ...]}  (values dropped by the sanity guard)
     counts:  >0 = new observations,  0 = no new data or skipped,  -1 = error
 
     Also maintains the fetch_errors table: records a row on exception, deletes
@@ -172,6 +173,7 @@ def fetch_all(series: list, last_dates: dict = None,
     counts = {}
     checked = []
     source_updated = {}
+    rejected = []
     fetched = 0
 
     for series_id, name in series:
@@ -190,19 +192,21 @@ def fetch_all(series: list, last_dates: dict = None,
             freq = _detect_frequency(series_id)
             if freq == "daily":
                 # Daily series: just fetch new data, no revision tracking
-                results = fetch_series(series_id, name, since=last_obs)
+                raw = fetch_series(series_id, name, since=last_obs)
                 # Drop implausible values (e.g. a corrupted FRED vintage) before
                 # they reach revision detection or the DB.
-                results = _drop_implausible(series_id, results)
+                results = _drop_implausible(series_id, raw)
                 new_only = results
             else:
                 # Weekly/monthly: fetch revision window to catch changes
-                results = fetch_series_with_revisions(series_id, name,
-                                                     last_obs=last_obs)
-                results = _drop_implausible(series_id, results)
+                raw = fetch_series_with_revisions(series_id, name,
+                                                  last_obs=last_obs)
+                results = _drop_implausible(series_id, raw)
                 new_only = [o for o in results
                             if last_obs is None or o.date > last_obs]
 
+            if len(results) < len(raw):
+                rejected.append(series_id)
             counts[series_id] = len(new_only)
             all_new.extend(new_only)
             all_fetched.extend(results)
@@ -226,4 +230,5 @@ def fetch_all(series: list, last_dates: dict = None,
                 print(f"[{ts}] (could not record fetch_error for {series_id}: {rec_err})")
 
     return {"new": all_new, "counts": counts, "checked": checked,
-            "all_fetched": all_fetched, "source_updated": source_updated}
+            "all_fetched": all_fetched, "source_updated": source_updated,
+            "rejected": rejected}
