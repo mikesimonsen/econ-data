@@ -62,7 +62,7 @@ def test_not_published_when_due_but_source_has_nothing_newer():
     v = decide_verdict(PAYEMS, before=SEP, after=(SEP, 159044.0),
                        due=date(2026, 11, 6), source_updated=updated)
     assert v["verdict"] == "NOT_PUBLISHED"
-    assert "2026-11-06" in v["message"] and "Oct 02" in v["message"]
+    assert "2026-11-06" in v["message"] and "Oct 02 at 09:30 EDT" in v["message"]
 
 
 def test_nothing_due_names_next_release():

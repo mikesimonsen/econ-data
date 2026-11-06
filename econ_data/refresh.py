@@ -113,7 +113,7 @@ def decide_verdict(target: Target, *, before: Optional[date],
         detail = "; ".join(errors) if errors else "see the Fly logs"
         return verdict("SOURCE_ERROR", f"The fetch failed: {detail}")
     if due:
-        updated = (f" The source last updated {source_updated:%b %d at %H:%M %Z}."
+        updated = (f" The source last updated {source_updated.astimezone():%b %d at %H:%M %Z}."
                    if source_updated else "")
         return verdict("NOT_PUBLISHED",
                        f"A release was due {due}, but the source has nothing newer "
