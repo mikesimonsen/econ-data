@@ -552,7 +552,8 @@ def get_overdue(today: Optional[date] = None) -> list[dict]:
     out = []
     for sid, scheduled, grace, notes, missed in open_rows:
         obs = history.get(sid, [])
-        last_captured = obs[0][1].date() if obs else None
+        # captured_at is NULL on rows from before the Postgres migration.
+        last_captured = obs[0][1].date() if obs and obs[0][1] else None
         if is_really_late([d for d, _ in obs], last_captured, grace, today):
             out.append({"series_id": sid, "scheduled_release": scheduled.isoformat(),
                         "grace_days": grace, "days_late": (today - scheduled).days,

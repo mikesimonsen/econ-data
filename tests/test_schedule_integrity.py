@@ -115,3 +115,23 @@ def test_sheets_manifest_uses_explicit_utc(tmp_path):
     assert stamp.endswith("Z")
     parsed = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
     assert abs((datetime.now(timezone.utc) - parsed).total_seconds()) < 60
+
+
+def test_overdue_handles_rows_without_a_capture_time(monkeypatch):
+    """Rows from before the Postgres migration have NULL captured_at."""
+    import econ_data.release_schedule as rs
+
+    class Result:
+        def __init__(self, rows): self.rows = rows
+        def fetchall(self): return self.rows
+
+    class FakeConn:
+        def execute(self, sql, params=None):
+            if "release_schedule" in sql:
+                return Result([("OLD", date(2026, 10, 1), 3, None, 2)])
+            return Result([("OLD", date(2026, 3, 1), None),
+                           ("OLD", date(2026, 2, 1), None)])
+
+    monkeypatch.setattr(rs, "connect", lambda: FakeConn())
+    overdue = rs.get_overdue(today=date(2026, 11, 6))
+    assert [(r["series_id"], r["days_late"], r["missed"]) for r in overdue] == [("OLD", 36, 2)]
