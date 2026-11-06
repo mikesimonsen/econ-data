@@ -112,7 +112,8 @@ def decide_verdict(target: Target, *, before: Optional[date],
     if errors or count == -1:
         detail = "; ".join(errors) if errors else "see the Fly logs"
         return verdict("SOURCE_ERROR", f"The fetch failed: {detail}")
-    if due:
+    # A daily series can hold today's value while today's schedule row is open.
+    if due and not (latest_date and latest_date >= due):
         updated = (f" The source last updated {source_updated.astimezone():%b %d at %H:%M %Z}."
                    if source_updated else "")
         return verdict("NOT_PUBLISHED",

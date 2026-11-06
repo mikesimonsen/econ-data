@@ -65,6 +65,12 @@ def test_not_published_when_due_but_source_has_nothing_newer():
     assert "2026-11-06" in v["message"] and "Oct 02 at 09:30 EDT" in v["message"]
 
 
+def test_daily_series_already_holding_the_due_date_is_current():
+    today = date(2026, 11, 6)
+    v = decide_verdict(PAYEMS, before=today, after=(today, 6.1), due=today)
+    assert v["verdict"] == "NOTHING_DUE"
+
+
 def test_nothing_due_names_next_release():
     v = decide_verdict(PAYEMS, before=OCT, after=(OCT, 159293.0),
                        next_release=date(2026, 12, 4))
