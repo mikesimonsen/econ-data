@@ -1,6 +1,6 @@
 {
-  "mortgage-rates": "2026-11-19T22:47:33Z",
-  "treasury-yields": "2026-11-19T22:47:33Z",
+  "mortgage-rates": "2026-11-20T19:53:48Z",
+  "treasury-yields": "2026-11-20T19:53:48Z",
   "ppi": "2026-11-13T23:01:29Z",
   "new-home-sales": "2026-10-27T21:08:29",
   "jobless-claims": "2026-04-03T07:00:36",
@@ -24,9 +24,9 @@
   "mortgage-intent": "2026-10-07T23:33:07",
   "consumer-confidence": "2026-07-31T16:24:58",
   "mba-applications": "2026-11-18T22:43:25Z",
-  "oil": "2026-11-19T22:47:33Z",
-  "mortgage-spread": "2026-11-19T22:47:33Z",
-  "sp500": "2026-11-19T22:47:33Z",
+  "oil": "2026-11-20T19:53:48Z",
+  "mortgage-spread": "2026-11-20T19:53:48Z",
+  "sp500": "2026-11-20T19:53:48Z",
   "labor-headlines": "2026-11-19T22:47:33Z",
   "labor-detail": "2026-11-19T22:47:33Z",
   "wage-growth": "2026-10-17T16:04:46",
@@ -44,8 +44,8 @@
   "zillow": "2026-11-16T23:49:46Z",
   "inflation-expectations-survey": "2026-11-16T23:49:46Z",
   "sp500-eps-trailing": "2026-09-05T16:55:33",
-  "sp500-eps-forward": "2026-11-13T23:01:29Z",
+  "sp500-eps-forward": "2026-11-20T19:53:48Z",
   "corporate-profits": "2026-09-30T23:33:15",
-  "regional-payrolls": "2026-11-17T23:08:52Z",
-  "regional-payrolls-derived": "2026-10-20T22:12:31"
+  "regional-payrolls": "2026-11-20T19:53:48Z",
+  "regional-payrolls-derived": "2026-11-20T19:53:48Z"
 }
