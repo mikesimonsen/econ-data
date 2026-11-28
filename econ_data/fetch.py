@@ -60,6 +60,16 @@ def _case_shiller_ids() -> frozenset:
     return cached
 
 
+def _full_history_ids() -> set:
+    """Series refetched from the start each time (loaded + cached once)."""
+    cached = getattr(_full_history_ids, "_cache", None)
+    if cached is None:
+        from econ_data import config
+        cached = config.full_history_series(config.load())
+        _full_history_ids._cache = cached
+    return cached
+
+
 def _drop_implausible(series_id: str, observations: list) -> list:
     """Drop observations whose value is outside the sanity range for the series.
 
@@ -199,8 +209,9 @@ def fetch_all(series: list, last_dates: dict = None,
                 new_only = results
             else:
                 # Weekly/monthly: fetch revision window to catch changes
+                since = None if series_id in _full_history_ids() else last_obs
                 raw = fetch_series_with_revisions(series_id, name,
-                                                  last_obs=last_obs)
+                                                  last_obs=since)
                 results = _drop_implausible(series_id, raw)
                 new_only = [o for o in results
                             if last_obs is None or o.date > last_obs]

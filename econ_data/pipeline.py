@@ -98,6 +98,18 @@ def fetch_fed_speeches() -> int:
         return 0
 
 
+def fetch_gdp_forecasts() -> int:
+    """Latest real GDP forecasts (econ_data/fetch_gdp_forecasts.py). Returns
+    rows new or changed. Never raises, like fetch_fomc."""
+    log("Refreshing GDP forecasts...")
+    try:
+        from econ_data.fetch_gdp_forecasts import refresh
+        return refresh(log=log)
+    except Exception as e:
+        log(f"  → GDP forecasts FAILED: {type(e).__name__}")
+        return 0
+
+
 def _format_revisions(revisions: list) -> str:
     if not revisions:
         return ""

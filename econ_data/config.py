@@ -48,6 +48,25 @@ def diff_series(cfg: dict) -> set:
     return result
 
 
+def cca_series(cfg: dict) -> set:
+    """Return set of series IDs with cca: true.
+
+    These level series also get a period_cca calc: the continuously
+    compounded annual rate of change from the prior observation.
+    """
+    result = {s["id"] for s in cfg.get("series", []) if s.get("cca")}
+    for group in cfg.get("groups", {}).values():
+        result.update(s["id"] for s in group["series"] if s.get("cca"))
+    return result
+
+
+def full_history_series(cfg: dict) -> set:
+    """Series in groups with full_history: true, whose revisions reach too far
+    back for the usual lookback window."""
+    return {s["id"] for group in cfg.get("groups", {}).values()
+            if group.get("full_history") for s in group["series"]}
+
+
 def inverted_series(cfg: dict) -> set:
     """Return set of series IDs where rising = economic weakness."""
     result = set()

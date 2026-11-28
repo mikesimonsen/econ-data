@@ -8,8 +8,8 @@ Skips post-processing entirely when nothing changed — no point regenerating
 the briefing and pushing a no-op commit on quiet afternoons.
 """
 from econ_data.config import all_series, load
-from econ_data.pipeline import (fetch_fed_speeches, fetch_fomc, fetch_intraday, log,
-                                post_process)
+from econ_data.pipeline import (fetch_fed_speeches, fetch_fomc, fetch_gdp_forecasts,
+                                fetch_intraday, log, post_process)
 from econ_data.run_lock import scheduled_run_lock
 from econ_data.store import get_last_dates
 
@@ -30,8 +30,9 @@ if __name__ == "__main__":
         # FRED series moved.
         fomc_new = fetch_fomc()
         speeches_new = fetch_fed_speeches()
+        forecasts_new = fetch_gdp_forecasts()
 
-        if not result["new"] and not revisions and not fomc_new and not speeches_new:
+        if not any((result["new"], revisions, fomc_new, speeches_new, forecasts_new)):
             log("Nothing new — skipping post-processing.")
         else:
             post_process(cfg, series, result, revisions)

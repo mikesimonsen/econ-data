@@ -11,7 +11,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from econ_data.config import diff_series, load as load_config, percent_series
+from econ_data.config import cca_series, diff_series, load as load_config, percent_series
 from econ_data.db import connect
 from econ_data.store import DB_PATH
 
@@ -78,7 +78,8 @@ def _export_group(group_id: str, series_ids: list, output_dir: Path,
 
 def _export_group_unified(group_id: str, series_ids: list, output_dir: Path,
                           calc_family: str, pct_ids: set, diff_ids: set = frozenset(),
-                          suffix: str = "", db_path: Path = DB_PATH) -> Path:
+                          suffix: str = "", db_path: Path = DB_PATH,
+                          cca_ids: set = frozenset()) -> Path:
     """Export a group as a wide-format CSV, picking the right calc type per series.
 
     calc_family: "period" or "yoy" — resolves to period_pct/period_pp or yoy_pct/yoy_pp
@@ -104,6 +105,8 @@ def _export_group_unified(group_id: str, series_ids: list, output_dir: Path,
         columns.append((sid, ct, names[sid] + suffix))
         if calc_family == "period" and sid in diff_ids:
             columns.append((sid, "period_diff", names[sid] + " Period Diff"))
+        if calc_family == "period" and sid in cca_ids:
+            columns.append((sid, "period_cca", names[sid] + " CC Annual Rate"))
 
     all_dates = set()
     col_data = {}
@@ -180,6 +183,7 @@ def export_all_groups_calcs(cfg: dict, updated_ids: set = None,
     """
     pct_ids = percent_series(cfg)
     diff_ids = diff_series(cfg)
+    cca_ids = cca_series(cfg)
     paths = []
     if updated_ids is not None:
         groups = _groups_with_updates(cfg, updated_ids)
@@ -192,7 +196,8 @@ def export_all_groups_calcs(cfg: dict, updated_ids: set = None,
             sub_dir = output_dir / calc_family
             path = _export_group_unified(gid, series_ids, sub_dir,
                                          calc_family, pct_ids, diff_ids,
-                                         suffix=suffix, db_path=db_path)
+                                         suffix=suffix, db_path=db_path,
+                                         cca_ids=cca_ids)
             paths.append(path)
     return paths
 

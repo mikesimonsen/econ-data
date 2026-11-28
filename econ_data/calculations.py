@@ -8,6 +8,8 @@ Calculation types:
   yoy_pp     — percentage-point difference from ~1 year earlier (for percent/rate series)
   period_diff — absolute difference from the prior observation (for level series
                 flagged diff: true in config, e.g. monthly jobs added for PAYEMS)
+  period_cca — continuously compounded annual rate of change from the prior
+                observation (level series flagged cca: true, e.g. real GDP)
 
 YoY matching is frequency-agnostic: for each observation, we find the
 nearest observation to the date exactly one year prior.  A tolerance of
@@ -15,10 +17,11 @@ half the series' median observation gap ensures we don't match across
 gaps that are too large (e.g. a 6-month hiatus).
 """
 import bisect
+import math
 from datetime import date as date_type, timedelta
 from pathlib import Path
 
-from econ_data.config import diff_series, load, percent_series
+from econ_data.config import cca_series, diff_series, load, percent_series
 from econ_data.db import connect
 from econ_data.store import DB_PATH
 
@@ -36,6 +39,7 @@ def compute_all(db_path: Path = DB_PATH) -> int:
     cfg = load()
     pct_ids = percent_series(cfg)
     diff_ids = diff_series(cfg)
+    cca_ids = cca_series(cfg)
 
     series_ids = [r[0] for r in con.execute(
         "SELECT DISTINCT series_id FROM observations ORDER BY series_id"
@@ -59,6 +63,8 @@ def compute_all(db_path: Path = DB_PATH) -> int:
                 total += _compute_yoy_pct(con, series_id, rows)
                 if series_id in diff_ids:
                     total += _compute_period_diff(con, series_id, rows)
+                if series_id in cca_ids:
+                    total += _compute_period_cca(con, series_id, rows)
 
     return total
 
@@ -143,6 +149,27 @@ def _compute_period_diff(con, series_id, rows):
         cur_date, cur_val = rows[i]
         diff = cur_val - prev_val
         calcs.append((series_id, "period_diff", cur_date, round(diff, 2)))
+
+    with con.cursor() as cur:
+        cur.executemany(UPSERT_SQL, calcs)
+    return len(calcs)
+
+
+def cca_rate(prev: float, cur: float, periods_per_year: int) -> float:
+    """Continuously compounded annual rate of change (%), as FRED's 'cca'."""
+    return periods_per_year * 100 * math.log(cur / prev)
+
+
+def _compute_period_cca(con, series_id, rows):
+    """Annualized log change from the prior observation."""
+    periods = round(365 / _median_gap_days(rows))
+    calcs = []
+    for i in range(1, len(rows)):
+        prev_val = rows[i - 1][1]
+        cur_date, cur_val = rows[i]
+        if prev_val > 0 and cur_val > 0:
+            rate = cca_rate(prev_val, cur_val, periods)
+            calcs.append((series_id, "period_cca", cur_date, round(rate, 2)))
 
     with con.cursor() as cur:
         cur.executemany(UPSERT_SQL, calcs)

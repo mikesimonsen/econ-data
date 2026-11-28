@@ -338,3 +338,14 @@ CREATE TABLE IF NOT EXISTS job_runs (
     last_run   TIMESTAMPTZ NOT NULL,
     detail     TEXT
 );
+
+-- Real GDP growth forecasts by vintage (econ_data/fetch_gdp_forecasts.py).
+-- value is as published: percent change at a compounded annual rate.
+CREATE TABLE IF NOT EXISTS gdp_forecasts (
+    source         TEXT             NOT NULL,  -- atlanta | newyork | stlouis | philly
+    target_quarter DATE             NOT NULL,  -- first day of the quarter forecast
+    forecast_date  DATE             NOT NULL,
+    value          DOUBLE PRECISION NOT NULL,
+    captured_at    TIMESTAMPTZ      NOT NULL,
+    PRIMARY KEY (source, target_quarter, forecast_date)
+);

@@ -266,6 +266,18 @@ groups:
         name: "Wage Growth 12-Month MA"
         units: percent
 
+  gdp:
+    name: "GDP - Real Gross Domestic Product (BEA, Quarterly)"
+    signals: minimal
+    full_history: true       # annual revisions restate years; refetch it all
+    series:
+      - id: GDPC1
+        name: "Real GDP (Billions of Chained 2017 $, SA Annual Rate)"
+        cca: true            # adds period_cca: continuously compounded annual rate
+      - id: A191RL1Q225SBEA
+        name: "Real GDP Growth (% Compounded Annual Rate, BEA Headline)"
+        units: percent
+
   productivity:
     name: "Productivity (BLS, Quarterly)"
     signals: minimal

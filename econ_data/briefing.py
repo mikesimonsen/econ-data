@@ -53,6 +53,7 @@ def _sid_html(sid: str, source_urls: dict) -> str:
 # Extra search keywords per group so users can find series by concept,
 # not just by name.  Keys = group_id, values = space-separated terms.
 _GROUP_SEARCH_TAGS = {
+    "gdp": "gdp growth output economy",
     "cpi": "inflation prices consumer",
     "cpi-metro": "inflation prices consumer metro city",
     "pce": "inflation prices consumer",
@@ -634,6 +635,9 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
     fomc_top_html = render_fomc_top() + render_people_top()
     fomc_bottom_html = render_fomc_bottom() + render_people_bottom()
 
+    from econ_data.gdp_render import render_gdp
+    gdp_html = render_gdp()
+
     source_urls = _build_source_urls(cfg)
 
     # Build revision lookup by series_id
@@ -675,6 +679,7 @@ def generate_briefing(cfg: dict, db_path: Path = DB_PATH,
         upcoming_releases=upcoming_releases,
         schedule_status=schedule_status,
         fed_chart_html=fed_chart_html,
+        gdp_html=gdp_html,
         fomc_top_html=fomc_top_html,
         fomc_bottom_html=fomc_bottom_html,
         today_series=today_series,
@@ -705,6 +710,7 @@ def _render_page(**ctx) -> str:
     inflation_charts_html = _render_inflation_charts(ctx)
     employment_charts_html = _render_employment_charts(ctx)
     fed_chart_html = ctx.get("fed_chart_html", "")
+    gdp_html = ctx.get("gdp_html", "")
     fomc_top_html = ctx.get("fomc_top_html", "")
     fomc_bottom_html = ctx.get("fomc_bottom_html", "")
     today_html = _render_today(ctx)
@@ -744,6 +750,7 @@ def _render_page(**ctx) -> str:
 <nav>
   <div class="nav-tabs">
     <a href="#today" class="active" onclick="showTab('today', this)">Today</a>
+    <a href="#gdp" onclick="showTab('gdp', this)">GDP</a>
     <a href="#housing" onclick="showTab('housing', this)">Housing</a>
     <a href="#inflation" onclick="showTab('inflation', this)">Inflation</a>
     <a href="#employment" onclick="showTab('employment', this)">Employment</a>
@@ -762,6 +769,10 @@ def _render_page(**ctx) -> str:
   <section id="today" class="tab-content active">
     {f'<div class="analysis-block">{analysis_html}</div>' if analysis_html else ''}
     {today_html}
+  </section>
+
+  <section id="gdp" class="tab-content">
+    {gdp_html if gdp_html else '<p class="muted">GDP data not yet populated.</p>'}
   </section>
 
   <section id="housing" class="tab-content">
